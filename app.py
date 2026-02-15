@@ -189,17 +189,6 @@ price_max = st.sidebar.number_input(
 
 st.sidebar.divider()
 
-price_max = st.sidebar.number_input(
-    "💰 Prix max. (€)", 
-    min_value=0, 
-    max_value=max_price,
-    value=default_price_max,
-    step=10000,
-    placeholder="Pas de maximum"
-)
-
-st.sidebar.divider()
-
 # Filtres de surface (m²)
 m2_min_data = df['square_meters'].min()
 m2_max_data = df['square_meters'].max()
