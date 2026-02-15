@@ -189,6 +189,51 @@ price_max = st.sidebar.number_input(
 
 st.sidebar.divider()
 
+price_max = st.sidebar.number_input(
+    "💰 Prix max. (€)", 
+    min_value=0, 
+    max_value=max_price,
+    value=default_price_max,
+    step=10000,
+    placeholder="Pas de maximum"
+)
+
+st.sidebar.divider()
+
+# Filtres de surface (m²)
+m2_min_data = df['square_meters'].min()
+m2_max_data = df['square_meters'].max()
+
+min_m2 = int(m2_min_data) if pd.notna(m2_min_data) else 0
+max_m2 = int(m2_max_data) if pd.notna(m2_max_data) else 1000
+
+# Valeurs par défaut depuis URL
+url_m2_min = st.query_params.get("m2_min")
+url_m2_max = st.query_params.get("m2_max")
+
+default_m2_min = int(url_m2_min) if url_m2_min else None
+default_m2_max = int(url_m2_max) if url_m2_max else None
+
+m2_min = st.sidebar.number_input(
+    "📏 Surface min. (m²)", 
+    min_value=0, 
+    max_value=max_m2,
+    value=default_m2_min,
+    step=5,
+    placeholder="Pas de minimum"
+)
+
+m2_max = st.sidebar.number_input(
+    "📏 Surface max. (m²)", 
+    min_value=0, 
+    max_value=max_m2,
+    value=default_m2_max,
+    step=5,
+    placeholder="Pas de maximum"
+)
+
+st.sidebar.divider()
+
 # Filtre Sources
 with st.sidebar.expander('🏢 Sources', expanded=True):
     default_sites = get_url_param_list('sites', available_sites)
@@ -235,6 +280,8 @@ st.query_params.update({
     "search": search_term,
     "price_min": str(price_min) if price_min else "",
     "price_max": str(price_max) if price_max else "",
+    "m2_min": str(m2_min) if m2_min else "",
+    "m2_max": str(m2_max) if m2_max else "",
     "favorites": ",".join(str(x) for x in st.session_state.favorites),
 })
 
@@ -271,6 +318,20 @@ else:
     # Filtrer par prix max
     if price_max is not None:
         filtered_df = filtered_df[filtered_df['price_numeric'] <= price_max]
+    
+    # Filtrer par surface min
+    if m2_min is not None:
+        filtered_df = filtered_df[
+            (filtered_df['square_meters'] >= m2_min) | 
+            (filtered_df['square_meters'].isna())  # Garde les annonces sans m² renseignés
+        ]
+    
+    # Filtrer par surface max
+    if m2_max is not None:
+        filtered_df = filtered_df[
+            (filtered_df['square_meters'] <= m2_max) | 
+            (filtered_df['square_meters'].isna())  # Garde les annonces sans m² renseignés
+        ]
     
     # Filtrer par favoris
     if show_favorites:
