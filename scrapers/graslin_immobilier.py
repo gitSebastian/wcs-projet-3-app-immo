@@ -1,6 +1,7 @@
 import requests
 from bs4 import BeautifulSoup
-from scraper_utils import DEFAULT_HEADERS, safe_text, safe_attr, create_listing
+from scraper_utils import DEFAULT_HEADERS, safe_text, safe_attr, create_listing, extract_square_meters
+
 
 def scrape():
     """Scrape Graslin Immobilier listings"""
@@ -33,9 +34,10 @@ def scrape():
             title_tag = info_div.find('h3', class_='titre') if info_div else None
             title_text = safe_text(title_tag)
             
-            # Build title and extract price
+            # Build title and extract price + square meters
             title_parts = [title_text] if title_text else []
             price = None
+            surface_text = None
             
             if info_div:
                 for item in info_div.find_all('li'):
@@ -43,10 +45,26 @@ def scrape():
                     if value_span:
                         text = safe_text(value_span)
                         suffixe = value_span.find('i', class_='suffixe')
-                        if suffixe and '€' in suffixe.text:
-                            price = text
+                        
+                        if suffixe:
+                            suffixe_text = safe_text(suffixe)
+                            if '€' in suffixe_text:
+                                # This is the price
+                                price = text
+                            elif 'm²' in suffixe_text or 'm2' in suffixe_text:
+                                # This is the surface - keep full text for extraction
+                                surface_text = text + suffixe_text
+                                # Also add to title
+                                title_parts.append(surface_text)
+                            else:
+                                # Other info for title
+                                title_parts.append(text)
                         elif text:
+                            # No suffixe, just add to title
                             title_parts.append(text)
+            
+            # Extract numeric square meters
+            square_meters = extract_square_meters(surface_text)
             
             title = ' - '.join(title_parts) if title_parts else None
             
@@ -56,7 +74,8 @@ def scrape():
                 price,
                 category,
                 link,
-                image
+                image,
+                square_meters  # Add square meters parameter
             ))
         except:
             continue
