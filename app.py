@@ -7,6 +7,7 @@ import pandas as pd
 import psycopg2
 import base64
 import os
+import re
 from pathlib import Path
 
 # =============================================================
@@ -61,7 +62,7 @@ def load_data_from_db():
     conn = psycopg2.connect(DATABASE_URL, connect_timeout=10)
     conn.autocommit = True
     try:
-        query = 'SELECT * FROM properties ORDER BY scraped_date DESC, id DESC'
+        query = 'SELECT * FROM properties ORDER BY scraped_date DESC, scrape_order ASC NULLS LAST, id DESC'
         df = pd.read_sql_query(query, conn)
     finally:
         conn.close()
@@ -89,6 +90,20 @@ def load_favorites_from_url():
     if fav_param:
         return set(int(x) for x in fav_param.split(",") if x)
     return set()
+
+
+def clean_ouestfrance_title(title):
+    """
+    Strips boilerplate from OuestFrance titles.
+    e.g. "Vente appartement 5 pièces - Nantes Procé - Monselet 44"
+      -> "5 pièces - Nantes Procé - Monselet"
+    """
+    # Remove leading "Vente appartement " (case-insensitive)
+    title = re.sub(r'^Vente\s+appartement\s+', '', title, flags=re.IGNORECASE)
+    # Remove trailing department code: 1–5 digits at end of string
+    title = re.sub(r'\s+\d{2,5}\s*$', '', title)
+    return title.strip()
+
 
 # =============================================================
 # CHARGEMENT DES RESSOURCES
@@ -367,7 +382,18 @@ else:
         
         # Préparer les données de la carte
         price_display = format_price(row['price_numeric'])
-        description = row['description'] if pd.notna(row['description']) else 'Pas de description'
+
+        # Titre : nettoyer le préfixe/suffixe pour OuestFrance
+        raw_title = row['title'] if pd.notna(row['title']) else ''
+        if row['site'] == 'Ouest France Immo':
+            title = clean_ouestfrance_title(raw_title)
+        else:
+            title = raw_title
+
+        # Description : tronquer à 100 caractères
+        raw_desc = row['description'] if pd.notna(row['description']) else ''
+        description = (raw_desc[:100] + '…') if len(raw_desc) > 100 else (raw_desc or 'Pas de description')
+
         is_favorited = row['id'] in st.session_state.favorites
         heart_icon = "❤️" if is_favorited else "🤍"
 
@@ -382,7 +408,7 @@ else:
                                 <div class="card-logo-wrapper">{logo_svg_text}</div>
                                 <div class="card-meta-text">{row['site']} · {row['scraped_date']}</div>
                         </div>
-                        <div class="card-title">{row['title']}</div>
+                        <div class="card-title">{title}</div>
                         <div class="card-description">{description}</div>
                         <div class="card-price-container">
                             <span>🏷️</span>
