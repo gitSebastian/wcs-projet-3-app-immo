@@ -287,7 +287,7 @@ st.sidebar.divider()
 # ------------------------------------------------------------------
 SORT_OPTIONS = {
     # None = preserve DB order (created_at DESC, scrape_order ASC)
-    "Par agence (défaut)":     (None,              None),
+    "Date (récent → ancien)":  (None,              None),
     "Prix (croissant)":        ("price_numeric",   True),
     "Prix (décroissant)":      ("price_numeric",   False),
     "Prix/m² (croissant)":     ("price_per_m2",    True),
