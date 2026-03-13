@@ -195,8 +195,8 @@
 .card-price-m2 {
     color: var(--text-gray);
     font-family: var(--font-body);
-    font-size: 13px;
-    margin-left: auto;  /* pushes it to the right end of the price bar */
+    font-size: 14px;
+    margin-left: 10px;  /* pushes it to the right end of the price bar */
 }
 
 /* =============================================================

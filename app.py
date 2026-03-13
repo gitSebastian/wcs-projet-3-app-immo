@@ -78,7 +78,7 @@ def format_price(price):
 def format_price_per_m2(price_per_m2):
     """Formate le prix au m² pour l'affichage sur les cartes"""
     if pd.notna(price_per_m2) and price_per_m2 > 0:
-        return f"{int(round(price_per_m2)):,} €/m²".replace(",", " ")
+        return f"({int(round(price_per_m2)):,} €/m²)".replace(",", " ")
     return None
 
 def parse_price_input(raw: str) -> int | None:
