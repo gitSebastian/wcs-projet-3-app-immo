@@ -69,15 +69,17 @@ def load_data_from_db():
         conn.close()
     return df
 
-def format_price(price, price_per_m2=None):
-    """Formate le prix pour l'affichage, avec €/m² optionnel entre parenthèses."""
+def format_price(price):
+    """Formate le prix pour l'affichage"""
     if pd.notna(price):
-        base = f"{int(price):,} €".replace(",", " ")
-        if price_per_m2 is not None and pd.notna(price_per_m2) and price_per_m2 > 0:
-            m2 = f"{int(round(price_per_m2)):,} € / m²".replace(",", " ")
-            return f"{base}  ({m2})"
-        return base
+        return f"{int(price):,} €".replace(",", " ")
     return "Prix non disponible"
+
+def format_price_per_m2(price_per_m2):
+    """Formate le prix au m² pour l'affichage sur les cartes"""
+    if pd.notna(price_per_m2) and price_per_m2 > 0:
+        return f"{int(round(price_per_m2)):,} €/m²".replace(",", " ")
+    return None
 
 def parse_price_input(raw: str) -> int | None:
     """
@@ -480,8 +482,11 @@ else:
     for idx, (_, row) in enumerate(filtered_df.iterrows()):
         col = cols[idx % 3]
 
-        # Prix — includes €/m² in parentheses when available
-        price_display = format_price(row['price_numeric'], row['price_per_m2'])
+        # Prix principal
+        price_display = format_price(row['price_numeric'])
+
+        # Prix au m² (shown only when both values are available)
+        price_m2_display = format_price_per_m2(row['price_per_m2'])
 
         # Titre : nettoyer le préfixe/suffixe pour OuestFrance
         raw_title = row['title'] if pd.notna(row['title']) else ''
@@ -497,8 +502,14 @@ else:
         is_favorited = row['id'] in st.session_state.favorites
         heart_icon = "❤️" if is_favorited else "🤍"
 
-        # Single-line f-string — no embedded newlines (see DECISIONS.md 2026-03-13)
-        price_block = f'<div class="card-price-container"><span>🏷️</span><span class="card-price">{price_display}</span></div>'
+        # Build price bar. Constructed as a single-line f-string (no triple
+        # quotes, no intermediate variable passed into another f-string) to
+        # avoid any whitespace/newline artefacts that can confuse Streamlit's
+        # markdown-to-HTML pipeline.
+        if price_m2_display:
+            price_block = f'<div class="card-price-container"><span>🏷️</span><span class="card-price">{price_display}</span><span class="card-price-m2">{price_m2_display}</span></div>'
+        else:
+            price_block = f'<div class="card-price-container"><span>🏷️</span><span class="card-price">{price_display}</span></div>'
 
         with col:
             card_html = f"""
