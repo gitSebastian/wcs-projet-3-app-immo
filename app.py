@@ -102,13 +102,37 @@ def format_price_input(value: int | None) -> str:
         return ""
     return f"{value:,}".replace(",", " ")
 
-def get_url_param_list(param_name, available_values):
-    """Récupère une liste depuis les paramètres URL"""
-    param_value = st.query_params.get(param_name, "")
-    if param_value:
-        selected = param_value.split(",")
-        return [v for v in selected if v in available_values]
-    return list(available_values)  # Par défaut: tout sélectionné
+def get_url_param_list(param_name, available_values):  # param_name kept for call-site compatibility, logic now uses sites+known_sites directly
+    """Récupère une liste depuis les paramètres URL.
+
+    Uses two URL params to distinguish user-deselected sources from new ones:
+      - `sites`       : comma-separated list of currently selected sources
+      - `known_sites` : comma-separated list of ALL sources known at last write
+
+    A source in available_values that is absent from `known_sites` is brand
+    new (added since the URL was last written) and is force-selected regardless
+    of what `sites` says. A source in `known_sites` but absent from `sites`
+    was deliberately deselected by the user and stays deselected.
+
+    Falls back to selecting everything when no URL params are present.
+    """
+    selected_param = st.query_params.get("sites", "")
+    known_param    = st.query_params.get("known_sites", "")
+
+    if not selected_param and not known_param:
+        return list(available_values)  # First ever load — select all
+
+    selected_in_url = set(selected_param.split(",")) if selected_param else set()
+    known_in_url    = set(known_param.split(","))    if known_param    else set()
+
+    result = []
+    for v in available_values:
+        if v not in known_in_url:
+            result.append(v)          # New source — always select
+        elif v in selected_in_url:
+            result.append(v)          # Was selected — keep selected
+        # else: was known and deselected — leave out
+    return result
 
 
 def load_favorites_from_url():
@@ -370,15 +394,16 @@ st.sidebar.caption(f"Total: {len(df)} annonces")
 # =============================================================
 
 st.query_params.update({
-    "sites":     ",".join(selected_sites),
-    "date_min":  selected_date_min.isoformat(),
-    "date_max":  selected_date_max.isoformat(),
-    "search":    search_term,
-    "price_min": str(price_min) if price_min is not None else "",
-    "price_max": str(price_max) if price_max is not None else "",
-    "m2_min":    str(m2_min) if m2_min else "",
-    "m2_max":    str(m2_max) if m2_max else "",
-    "favorites": ",".join(str(x) for x in st.session_state.favorites),
+    "sites":       ",".join(selected_sites),
+    "known_sites": ",".join(available_sites),   # full universe at write time
+    "date_min":    selected_date_min.isoformat(),
+    "date_max":    selected_date_max.isoformat(),
+    "search":      search_term,
+    "price_min":   str(price_min) if price_min is not None else "",
+    "price_max":   str(price_max) if price_max is not None else "",
+    "m2_min":      str(m2_min) if m2_min else "",
+    "m2_max":      str(m2_max) if m2_max else "",
+    "favorites":   ",".join(str(x) for x in st.session_state.favorites),
 })
 
 # =============================================================
