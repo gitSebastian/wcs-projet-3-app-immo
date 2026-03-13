@@ -221,159 +221,109 @@ st.markdown(f"""
 
 # =============================================================
 # POC — MOBILE FAB + FILTER OVERLAY
-# Strategy: st.components.v1.html() for the FAB + backdrop — this
-# renders a true iframe with full JS execution (no sanitization).
-# JS communicates back to Python via window.parent.postMessage,
-# which Streamlit listens to and maps to a query param change.
-# Simpler alternative used here: FAB open/close is pure session_state
-# toggled by real st.buttons, styled via CSS to be invisible.
-# The FAB itself is rendered via components.html so JS runs freely.
+#
+# Architecture (final):
+#   - components.html() renders ONE persistent iframe containing
+#     ONLY the FAB button. The iframe has height=0 so it takes no
+#     space, but position:fixed elements inside it escape the iframe
+#     bounds and attach to the viewport. The FAB lives here.
+#
+#   - The panel and backdrop are rendered by Python as a normal
+#     st.container, shown/hidden via session_state.fab_open.
+#     Python owns the open/close truth — no JS DOM state to lose
+#     on rerun.
+#
+#   - The bridge: FAB click → iframe JS → window.parent.document
+#     .querySelector clicks the hidden ▶/■ st.button → Python
+#     sets session_state → st.rerun() → panel appears/disappears.
+#
+#   - The 2-second flicker from the previous attempt was caused by
+#     components.html() destroying and recreating the iframe on every
+#     rerun, resetting JS DOM state mid-animation. Solved by keeping
+#     the panel in Python (stable across reruns) and the iframe
+#     stateless (only the FAB, no open/close state inside it).
 # =============================================================
 import streamlit.components.v1 as components
 
-# Two invisible st.buttons — styled to display:none via CSS class trick.
-# We use st.columns with zero-width to tuck them out of the layout.
+# --- Bridge buttons (hidden via CSS, clicked by iframe JS) ---
 _fab_cols = st.columns([0.001, 0.001, 0.998])
 with _fab_cols[0]:
-    fab_open_clicked = st.button('▶', key='fab_toggle', help=None)
+    if st.button('▶', key='fab_toggle'):
+        st.session_state.fab_open = True
+        st.rerun()
 with _fab_cols[1]:
-    fab_close_clicked = st.button('■', key='fab_close', help=None)
+    if st.button('■', key='fab_close'):
+        st.session_state.fab_open = False
+        st.rerun()
 
-if fab_open_clicked:
-    st.session_state.fab_open = True
-    st.rerun()
-if fab_close_clicked:
-    st.session_state.fab_open = False
-    st.rerun()
-
-# The FAB circle + backdrop injected as a real iframe via components.html.
-# JS posts a message to the parent Streamlit frame when clicked.
-# The parent intercepts it and clicks the matching invisible st.button.
-poc_panel_display = 'flex' if st.session_state.fab_open else 'none'
-poc_backdrop_display = 'block' if st.session_state.fab_open else 'none'
-
-components.html(f"""
-<!DOCTYPE html>
-<html>
-<head>
+# --- FAB iframe (stateless — only renders the fixed button) ---
+# position:fixed inside an iframe is fixed to the iframe's viewport.
+# With height=0 and width=100%, the iframe viewport is a 0px-tall
+# strip at the top of the page — but position:fixed elements break
+# out of it and attach to the browser viewport. Confirmed behaviour
+# in Chrome/Safari.
+components.html("""
+<!DOCTYPE html><html><head>
 <style>
-  body {{ margin:0; padding:0; background:transparent; overflow:hidden; }}
-
-  /* Backdrop */
-  #poc-backdrop {{
-    display:{poc_backdrop_display};
-    position:fixed; inset:0;
-    background:rgba(0,0,0,0.55);
-    z-index:1998;
-    cursor:pointer;
-  }}
-
-  /* FAB */
-  #poc-fab {{
-    position:fixed;
-    bottom:28px; right:28px;
-    z-index:2000;
-    width:56px; height:56px;
-    border-radius:50%;
-    border:2px solid #555;
-    background:#3a3a3a;
-    color:white; font-size:22px;
-    cursor:pointer;
+  body { margin:0; padding:0; background:transparent; overflow:hidden; }
+  #poc-fab {
+    position:fixed; bottom:28px; right:28px; z-index:2000;
+    width:56px; height:56px; border-radius:50%;
+    border:2px solid #555; background:#3a3a3a;
+    color:white; font-size:22px; cursor:pointer;
     box-shadow:0 4px 16px rgba(0,0,0,0.5);
     display:flex; align-items:center; justify-content:center;
-    transition: background 0.2s;
-  }}
-  #poc-fab:hover {{ background:#4a4a4a; }}
-
-  /* Bottom sheet panel */
-  #poc-panel {{
-    display:{poc_panel_display};
-    position:fixed;
-    bottom:0; left:0; right:0;
-    z-index:1999;
-    max-height:70vh;
-    overflow-y:auto;
-    background:#232427;
-    border-radius:20px 20px 0 0;
-    padding:24px 20px 40px 20px;
-    flex-direction:column;
-    gap:12px;
-    box-shadow:0 -4px 30px rgba(0,0,0,0.6);
-  }}
-
-  .panel-header {{
-    display:flex;
-    justify-content:space-between;
-    align-items:center;
-    margin-bottom:8px;
-  }}
-  .panel-title {{
-    color:white;
-    font-size:18px;
-    font-weight:600;
-    font-family:sans-serif;
-  }}
-  .panel-close {{
-    background:none;
-    border:none;
-    color:#999;
-    font-size:28px;
-    cursor:pointer;
-    padding:4px 8px;
-    line-height:1;
-  }}
-  .panel-caption {{
-    color:#999;
-    font-size:13px;
-    font-family:sans-serif;
-    margin:0 0 12px 0;
-  }}
+    transition:background 0.2s;
+  }
+  #poc-fab:hover { background:#4a4a4a; }
 </style>
-</head>
-<body>
-
-<div id="poc-backdrop" onclick="sendMsg('close')"></div>
-
-<button id="poc-fab" onclick="sendMsg('open')">&#9881;</button>
-
-<div id="poc-panel">
-  <div class="panel-header">
-    <span class="panel-title">🔍 Filtres (POC)</span>
-    <button class="panel-close" onclick="sendMsg('close')">&times;</button>
-  </div>
-  <p class="panel-caption">Ceci est un test — ce champ ne filtre rien encore.</p>
-</div>
-
+</head><body>
+<button id="poc-fab" onclick="clickBridge()">&#9881;</button>
 <script>
-  function clickBridge(label) {{
-    // The iframe and parent are same-origin on Streamlit Cloud,
-    // so we can access window.parent.document directly.
-    var btns = window.parent.document.querySelectorAll('[data-testid="stBaseButton-secondary"]');
-    for (var i = 0; i < btns.length; i++) {{
-      var p = btns[i].querySelector('p');
-      if (p && p.textContent.trim() === label) {{
-        btns[i].click();
-        return;
-      }}
-    }}
-  }}
-
-  function sendMsg(action) {{
-    if (action === 'open') {{
-      document.getElementById('poc-panel').style.display = 'flex';
-      document.getElementById('poc-backdrop').style.display = 'block';
-      clickBridge('\u25b6');  // ▶
-    }} else {{
-      document.getElementById('poc-panel').style.display = 'none';
-      document.getElementById('poc-backdrop').style.display = 'none';
-      clickBridge('\u25a0');  // ■
-    }}
-  }}
+function clickBridge() {
+  // Same-origin: iframe can read parent DOM directly
+  var btns = window.parent.document.querySelectorAll(
+    '[data-testid="stBaseButton-secondary"]'
+  );
+  for (var i = 0; i < btns.length; i++) {
+    var p = btns[i].querySelector('p');
+    if (p && p.textContent.trim() === '\u25b6') { btns[i].click(); return; }
+  }
+}
 </script>
+</body></html>
+""", height=0)
 
-</body>
-</html>
-""", height=0)  # height=0: the iframe is invisible; all content is position:fixed
+# --- Panel (Python-owned, shown/hidden by session_state) ---
+# Backdrop and panel are normal st.markdown HTML — no JS needed here.
+# They appear/disappear on rerun driven by fab_open state.
+if st.session_state.fab_open:
+    st.markdown("""
+    <div id="poc-backdrop"
+         style="position:fixed; inset:0; background:rgba(0,0,0,0.55);
+                z-index:1998; cursor:pointer;">
+    </div>
+    <div id="poc-panel"
+         style="position:fixed; bottom:0; left:0; right:0; z-index:1999;
+                max-height:70vh; overflow-y:auto; background:#232427;
+                border-radius:20px 20px 0 0; padding:24px 20px 40px;
+                display:flex; flex-direction:column; gap:12px;
+                box-shadow:0 -4px 30px rgba(0,0,0,0.6);">
+        <div style="display:flex; justify-content:space-between;
+                    align-items:center; margin-bottom:8px;">
+            <span style="color:white; font-size:18px; font-weight:600;
+                         font-family:sans-serif;">🔍 Filtres (POC)</span>
+        </div>
+        <p style="color:#999; font-size:13px; font-family:sans-serif;
+                  margin:0 0 12px;">Ceci est un test — ce champ ne filtre rien encore.</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Close button as a real st.button so it works on mobile without JS
+    # Positioned below the panel HTML — CSS floats it into the panel header
+    if st.button('✕ Fermer', key='fab_close_btn'):
+        st.session_state.fab_open = False
+        st.rerun()
 
 # =============================================================
 # SIDEBAR - Filtres
