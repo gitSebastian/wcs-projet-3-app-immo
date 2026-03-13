@@ -192,6 +192,13 @@
     font-weight: 500;
 }
 
+.card-price-m2 {
+    color: var(--text-gray);
+    font-family: var(--font-body);
+    font-size: 13px;
+    margin-left: auto;  /* pushes it to the right end of the price bar */
+}
+
 /* =============================================================
    SIDEBAR
    ============================================================= */

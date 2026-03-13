@@ -8,6 +8,7 @@ import psycopg2
 import base64
 import os
 import re
+from datetime import date, timedelta
 from pathlib import Path
 
 # =============================================================
@@ -74,6 +75,32 @@ def format_price(price):
         return f"{int(price):,} €".replace(",", " ")
     return "Prix non disponible"
 
+def format_price_per_m2(price_per_m2):
+    """Formate le prix au m² pour l'affichage sur les cartes"""
+    if pd.notna(price_per_m2) and price_per_m2 > 0:
+        return f"{int(round(price_per_m2)):,} €/m²".replace(",", " ")
+    return None
+
+def parse_price_input(raw: str) -> int | None:
+    """
+    Parse a price text input that may contain spaces as thousand separators.
+    Accepts: "400 000", "400000", "400.000", "400,000" → 400000
+    Returns None if the string is empty or unparseable.
+    """
+    if not raw or not raw.strip():
+        return None
+    # Strip all non-digit characters (spaces, dots, commas)
+    digits = re.sub(r'[^\d]', '', raw.strip())
+    return int(digits) if digits else None
+
+def format_price_input(value: int | None) -> str:
+    """
+    Format an integer back to a spaced string for display in text_input.
+    400000 → "400 000"
+    """
+    if value is None:
+        return ""
+    return f"{value:,}".replace(",", " ")
 
 def get_url_param_list(param_name, available_values):
     """Récupère une liste depuis les paramètres URL"""
@@ -133,6 +160,17 @@ else:
 
 df = get_data()
 
+# Compute price per m² as a derived column (never stored in DB — pure derivative)
+df['price_per_m2'] = df.apply(
+    lambda r: round(r['price_numeric'] / r['square_meters'], 2)
+    if pd.notna(r['price_numeric']) and pd.notna(r['square_meters']) and r['square_meters'] > 0
+    else None,
+    axis=1
+)
+
+# Cast scraped_date to actual dates for range filtering
+df['scraped_date_dt'] = pd.to_datetime(df['scraped_date'], errors='coerce').dt.date
+
 # Favoris (session state)
 if 'favorites' not in st.session_state:
     st.session_state.favorites = load_favorites_from_url()
@@ -154,7 +192,10 @@ st.markdown(f"""
 
 # Valeurs disponibles
 available_sites = sorted(df['site'].unique())
-available_dates = sorted(df['scraped_date'].unique(), reverse=True)
+
+# Date bounds from data
+date_min_data = df['scraped_date_dt'].min()
+date_max_data = df['scraped_date_dt'].max()
 
 # Recherche
 search_term = st.sidebar.text_input(
@@ -170,48 +211,46 @@ show_favorites = st.sidebar.checkbox("⭐ Favoris seulement", value=False)
 
 st.sidebar.divider()
 
-# Filtres de prix
-price_min_data = df['price_numeric'].min()
-price_max_data = df['price_numeric'].max()
-
-min_price = int(price_min_data) if pd.notna(price_min_data) else 0
-max_price = int(price_max_data) if pd.notna(price_max_data) else 100000000
-
-# Valeurs par défaut depuis URL
+# ------------------------------------------------------------------
+# Filtres de prix — text_input with thousand-space formatting
+# ------------------------------------------------------------------
 url_price_min = st.query_params.get("price_min")
 url_price_max = st.query_params.get("price_max")
 
-default_price_min = int(url_price_min) if url_price_min else None
-default_price_max = int(url_price_max) if url_price_max else None
+default_price_min_str = format_price_input(int(url_price_min) if url_price_min else None)
+default_price_max_str = format_price_input(int(url_price_max) if url_price_max else None)
 
-price_min = st.sidebar.number_input(
-    "💰 Prix min. (€)", 
-    min_value=0, 
-    max_value=max_price,
-    value=default_price_min,
-    step=10000,
-    placeholder="Pas de minimum"
+raw_price_min = st.sidebar.text_input(
+    "💰 Prix min. (€)",
+    value=default_price_min_str,
+    placeholder="ex: 150 000"
+)
+raw_price_max = st.sidebar.text_input(
+    "💰 Prix max. (€)",
+    value=default_price_max_str,
+    placeholder="ex: 400 000"
 )
 
-price_max = st.sidebar.number_input(
-    "💰 Prix max. (€)", 
-    min_value=0, 
-    max_value=max_price,
-    value=default_price_max,
-    step=10000,
-    placeholder="Pas de maximum"
-)
+price_min = parse_price_input(raw_price_min)
+price_max = parse_price_input(raw_price_max)
+
+# Show a validation hint if the user typed something unparseable
+if raw_price_min.strip() and price_min is None:
+    st.sidebar.caption("⚠️ Prix min. invalide")
+if raw_price_max.strip() and price_max is None:
+    st.sidebar.caption("⚠️ Prix max. invalide")
 
 st.sidebar.divider()
 
+# ------------------------------------------------------------------
 # Filtres de surface (m²)
+# ------------------------------------------------------------------
 m2_min_data = df['square_meters'].min()
 m2_max_data = df['square_meters'].max()
 
 min_m2 = int(m2_min_data) if pd.notna(m2_min_data) else 0
 max_m2 = int(m2_max_data) if pd.notna(m2_max_data) else 1000
 
-# Valeurs par défaut depuis URL
 url_m2_min = st.query_params.get("m2_min")
 url_m2_max = st.query_params.get("m2_max")
 
@@ -238,6 +277,28 @@ m2_max = st.sidebar.number_input(
 
 st.sidebar.divider()
 
+# ------------------------------------------------------------------
+# Tri
+# ------------------------------------------------------------------
+SORT_OPTIONS = {
+    "Date (récent → ancien)": ("scraped_date_dt", False),
+    "Prix (croissant)":        ("price_numeric",   True),
+    "Prix (décroissant)":      ("price_numeric",   False),
+    "Prix/m² (croissant)":     ("price_per_m2",    True),
+    "Prix/m² (décroissant)":   ("price_per_m2",    False),
+    "Surface (croissante)":    ("square_meters",   True),
+    "Surface (décroissante)":  ("square_meters",   False),
+}
+
+sort_label = st.sidebar.selectbox(
+    "↕️ Trier par",
+    options=list(SORT_OPTIONS.keys()),
+    index=0
+)
+sort_col, sort_asc = SORT_OPTIONS[sort_label]
+
+st.sidebar.divider()
+
 # Filtre Sources
 with st.sidebar.expander('🏢 Sources', expanded=True):
     default_sites = get_url_param_list('sites', available_sites)
@@ -254,19 +315,43 @@ with st.sidebar.expander('🏢 Sources', expanded=True):
 
 st.sidebar.divider()
 
-# Filtre Dates
-with st.sidebar.expander('📅 Dates', expanded=True):
-    default_dates = get_url_param_list('dates', available_dates)
-    selected_dates = []
-    
-    for date in available_dates:
-        is_selected = st.checkbox(
-            str(date), 
-            value=(date in default_dates), 
-            key=f"date_{date}"
-        )
-        if is_selected:
-            selected_dates.append(date)
+# ------------------------------------------------------------------
+# Filtre Dates — date_input range (replaces checkbox list)
+# ------------------------------------------------------------------
+# Restore range from URL params if present
+url_date_min = st.query_params.get("date_min")
+url_date_max = st.query_params.get("date_max")
+
+try:
+    default_date_min = date.fromisoformat(url_date_min) if url_date_min else date_min_data
+    default_date_max = date.fromisoformat(url_date_max) if url_date_max else date_max_data
+except (ValueError, TypeError):
+    default_date_min = date_min_data
+    default_date_max = date_max_data
+
+# Clamp defaults to actual data bounds (guards against stale URL params)
+default_date_min = max(default_date_min, date_min_data)
+default_date_max = min(default_date_max, date_max_data)
+
+date_range = st.sidebar.date_input(
+    "📅 Période",
+    value=(default_date_min, default_date_max),
+    min_value=date_min_data,
+    max_value=date_max_data,
+    format="DD/MM/YYYY",
+)
+
+# date_input returns a tuple of 1 or 2 dates depending on user interaction
+if isinstance(date_range, (list, tuple)) and len(date_range) == 2:
+    selected_date_min, selected_date_max = date_range
+elif isinstance(date_range, (list, tuple)) and len(date_range) == 1:
+    # User has only picked the start date — keep max open
+    selected_date_min = date_range[0]
+    selected_date_max = date_max_data
+else:
+    # Single date object (shouldn't happen with range mode, but be safe)
+    selected_date_min = date_range
+    selected_date_max = date_max_data
 
 st.sidebar.divider()
 
@@ -279,13 +364,14 @@ st.sidebar.caption(f"Total: {len(df)} annonces")
 # =============================================================
 
 st.query_params.update({
-    "sites": ",".join(selected_sites),
-    "dates": ",".join(selected_dates),
-    "search": search_term,
-    "price_min": str(price_min) if price_min else "",
-    "price_max": str(price_max) if price_max else "",
-    "m2_min": str(m2_min) if m2_min else "",
-    "m2_max": str(m2_max) if m2_max else "",
+    "sites":     ",".join(selected_sites),
+    "date_min":  selected_date_min.isoformat(),
+    "date_max":  selected_date_max.isoformat(),
+    "search":    search_term,
+    "price_min": str(price_min) if price_min is not None else "",
+    "price_max": str(price_max) if price_max is not None else "",
+    "m2_min":    str(m2_min) if m2_min else "",
+    "m2_max":    str(m2_max) if m2_max else "",
     "favorites": ",".join(str(x) for x in st.session_state.favorites),
 })
 
@@ -293,20 +379,21 @@ st.query_params.update({
 # FILTRAGE DES DONNÉES
 # =============================================================
 
-# Vérifier qu'au moins un filtre est sélectionné
-if not selected_sites or not selected_dates:
-    st.warning("⚠️ Sélectionnez au moins une source et une date")
+if not selected_sites:
+    st.warning("⚠️ Sélectionnez au moins une source")
     filtered_df = pd.DataFrame()
 else:
-    # Commencer avec toutes les données
     filtered_df = df.copy()
-    
+
     # Filtrer par site
     filtered_df = filtered_df[filtered_df['site'].isin(selected_sites)]
-    
-    # Filtrer par date
-    filtered_df = filtered_df[filtered_df['scraped_date'].isin(selected_dates)]
-    
+
+    # Filtrer par plage de dates
+    filtered_df = filtered_df[
+        (filtered_df['scraped_date_dt'] >= selected_date_min) &
+        (filtered_df['scraped_date_dt'] <= selected_date_max)
+    ]
+
     # Filtrer par recherche
     if search_term:
         search_mask = (
@@ -314,32 +401,47 @@ else:
             filtered_df['description'].str.contains(search_term, case=False, na=False)
         )
         filtered_df = filtered_df[search_mask]
-    
+
     # Filtrer par prix min
     if price_min is not None:
         filtered_df = filtered_df[filtered_df['price_numeric'] >= price_min]
-    
+
     # Filtrer par prix max
     if price_max is not None:
         filtered_df = filtered_df[filtered_df['price_numeric'] <= price_max]
-    
+
     # Filtrer par surface min
     if m2_min is not None:
         filtered_df = filtered_df[
-            (filtered_df['square_meters'] >= m2_min) | 
+            (filtered_df['square_meters'] >= m2_min) |
             (filtered_df['square_meters'].isna())  # Garde les annonces sans m² renseignés
         ]
-    
+
     # Filtrer par surface max
     if m2_max is not None:
         filtered_df = filtered_df[
-            (filtered_df['square_meters'] <= m2_max) | 
+            (filtered_df['square_meters'] <= m2_max) |
             (filtered_df['square_meters'].isna())  # Garde les annonces sans m² renseignés
         ]
-    
+
     # Filtrer par favoris
     if show_favorites:
         filtered_df = filtered_df[filtered_df['id'].isin(st.session_state.favorites)]
+
+    # Trier
+    # For price_per_m2 and price_numeric sorts, listings with no value sink to the bottom
+    # regardless of sort direction, so real listings always surface first.
+    if sort_col in ('price_per_m2', 'price_numeric', 'square_meters'):
+        filtered_df = filtered_df.sort_values(
+            by=sort_col,
+            ascending=sort_asc,
+            na_position='last'
+        )
+    else:
+        filtered_df = filtered_df.sort_values(
+            by=sort_col,
+            ascending=sort_asc
+        )
 
 # =============================================================
 # UI - STATISTIQUES ON TOP
@@ -369,19 +471,22 @@ st.divider()
 # =============================================================
 
 if len(filtered_df) == 0:
-    # Afficher un message si aucun résultat
-    if selected_sites and selected_dates:
+    if not selected_sites:
+        pass  # Warning already shown above
+    else:
         st.info("Aucune annonce avec ces filtres")
 else:
     # Afficher les cartes en 3 colonnes
     cols = st.columns(3)
     
     for idx, (_, row) in enumerate(filtered_df.iterrows()):
-        # Déterminer la colonne (0, 1, ou 2)
         col = cols[idx % 3]
-        
-        # Préparer les données de la carte
+
+        # Prix principal
         price_display = format_price(row['price_numeric'])
+
+        # Prix au m² (shown only when both values are available)
+        price_m2_display = format_price_per_m2(row['price_per_m2'])
 
         # Titre : nettoyer le préfixe/suffixe pour OuestFrance
         raw_title = row['title'] if pd.notna(row['title']) else ''
@@ -397,8 +502,24 @@ else:
         is_favorited = row['id'] in st.session_state.favorites
         heart_icon = "❤️" if is_favorited else "🤍"
 
+        # Build the price block: show €/m² badge only when available
+        if price_m2_display:
+            price_block = f"""
+                        <div class="card-price-container">
+                            <span>🏷️</span>
+                            <span class="card-price">{price_display}</span>
+                            <span class="card-price-m2">{price_m2_display}</span>
+                        </div>
+            """
+        else:
+            price_block = f"""
+                        <div class="card-price-container">
+                            <span>🏷️</span>
+                            <span class="card-price">{price_display}</span>
+                        </div>
+            """
+
         with col:
-            # Carte HTML
             card_html = f"""
             <div class="card-wrapper">
                 <a href="{row['url']}" target="_blank" class="card-link">
@@ -410,10 +531,7 @@ else:
                         </div>
                         <div class="card-title">{title}</div>
                         <div class="card-description">{description}</div>
-                        <div class="card-price-container">
-                            <span>🏷️</span>
-                            <span class="card-price">{price_display}</span>
-                        </div>
+                        {price_block}
                     </div>
                 </a>
             </div>
