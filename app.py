@@ -63,7 +63,7 @@ def load_data_from_db():
     conn = psycopg2.connect(DATABASE_URL, connect_timeout=10)
     conn.autocommit = True
     try:
-        query = 'SELECT * FROM properties ORDER BY scraped_date DESC, scrape_order ASC NULLS LAST, id DESC'
+        query = 'SELECT * FROM properties ORDER BY created_at DESC, scrape_order ASC NULLS LAST'
         df = pd.read_sql_query(query, conn)
     finally:
         conn.close()
@@ -122,13 +122,18 @@ def load_favorites_from_url():
 def clean_ouestfrance_title(title):
     """
     Strips boilerplate from OuestFrance titles.
-    e.g. "Vente appartement 5 pièces - Nantes Procé - Monselet 44"
-      -> "5 pièces - Nantes Procé - Monselet"
+    e.g. "Vente appartement 5 pièces - Nantes Zola 44 - 73 m²"
+      -> "5 pièces - Nantes Zola - 73 m²"
+
+    The scraper appends m² at the end, so the department code (e.g. "44")
+    is no longer the last token. We strip it wherever it appears as a
+    standalone 2-digit number preceded by a space, bounded by " - " or end.
     """
     # Remove leading "Vente appartement " (case-insensitive)
     title = re.sub(r'^Vente\s+appartement\s+', '', title, flags=re.IGNORECASE)
-    # Remove trailing department code: 1–5 digits at end of string
-    title = re.sub(r'\s+\d{2,5}\s*$', '', title)
+    # Remove department code: 2-digit number as a standalone word,
+    # optionally followed by " - " or end of string
+    title = re.sub(r'\s+\d{2}(?=\s*(?:-|$))', '', title)
     return title.strip()
 
 
@@ -281,7 +286,8 @@ st.sidebar.divider()
 # Tri
 # ------------------------------------------------------------------
 SORT_OPTIONS = {
-    "Date (récent → ancien)": ("scraped_date_dt", False),
+    # None = preserve DB order (created_at DESC, scrape_order ASC)
+    "Par agence (défaut)":     (None,              None),
     "Prix (croissant)":        ("price_numeric",   True),
     "Prix (décroissant)":      ("price_numeric",   False),
     "Prix/m² (croissant)":     ("price_per_m2",    True),
@@ -429,9 +435,12 @@ else:
         filtered_df = filtered_df[filtered_df['id'].isin(st.session_state.favorites)]
 
     # Trier
-    # For price_per_m2 and price_numeric sorts, listings with no value sink to the bottom
-    # regardless of sort direction, so real listings always surface first.
-    if sort_col in ('price_per_m2', 'price_numeric', 'square_meters'):
+    if sort_col is None:
+        # Default: preserve DB order (created_at DESC, scrape_order ASC)
+        # The DataFrame already arrives in this order from the query — no-op.
+        pass
+    elif sort_col in ('price_per_m2', 'price_numeric', 'square_meters'):
+        # Listings with no value sink to the bottom regardless of direction
         filtered_df = filtered_df.sort_values(
             by=sort_col,
             ascending=sort_asc,
