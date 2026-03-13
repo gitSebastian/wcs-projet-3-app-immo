@@ -502,22 +502,14 @@ else:
         is_favorited = row['id'] in st.session_state.favorites
         heart_icon = "❤️" if is_favorited else "🤍"
 
-        # Build the price block: show €/m² badge only when available
+        # Build price bar. Constructed as a single-line f-string (no triple
+        # quotes, no intermediate variable passed into another f-string) to
+        # avoid any whitespace/newline artefacts that can confuse Streamlit's
+        # markdown-to-HTML pipeline.
         if price_m2_display:
-            price_block = f"""
-                        <div class="card-price-container">
-                            <span>🏷️</span>
-                            <span class="card-price">{price_display}</span>
-                            <span class="card-price-m2">{price_m2_display}</span>
-                        </div>
-            """
+            price_block = f'<div class="card-price-container"><span>🏷️</span><span class="card-price">{price_display}</span><span class="card-price-m2">{price_m2_display}</span></div>'
         else:
-            price_block = f"""
-                        <div class="card-price-container">
-                            <span>🏷️</span>
-                            <span class="card-price">{price_display}</span>
-                        </div>
-            """
+            price_block = f'<div class="card-price-container"><span>🏷️</span><span class="card-price">{price_display}</span></div>'
 
         with col:
             card_html = f"""
