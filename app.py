@@ -221,41 +221,91 @@ st.markdown(f"""
 
 # =============================================================
 # POC — MOBILE FAB + FILTER OVERLAY
-# Nothing here touches the sidebar. Sidebar is 100% intact.
-# The FAB button is a real st.button made position:fixed via CSS.
-# The panel is a real st.container rendered here in the page flow,
-# visually repositioned to a bottom-sheet via CSS.
-# The marker spans are the CSS targeting anchors (see styles.css).
+# Strategy: pure HTML/CSS/JS overlay injected via st.markdown.
+# The FAB and panel are 100% HTML — no Streamlit widget positioning.
+# JS simulates a click on hidden Streamlit buttons (fab_toggle /
+# fab_close) to communicate open/close state back to Python.
+# This avoids all CSS selector fragility from the marker-span approach.
 # =============================================================
 
-# Backdrop (shown when panel is open — pure HTML, no Python interaction needed)
-if st.session_state.fab_open:
-    st.markdown('<div class="poc-backdrop poc-backdrop-open"></div>', unsafe_allow_html=True)
-else:
-    st.markdown('<div class="poc-backdrop"></div>', unsafe_allow_html=True)
-
-# FAB button — the marker span immediately before it is the CSS hook
-st.markdown('<span class="fab-marker"></span>', unsafe_allow_html=True)
-if st.button('⚙️', key='fab_toggle'):
-    st.session_state.fab_open = not st.session_state.fab_open
+# These two hidden st.buttons are the Python ↔ JS bridge.
+# JS will .click() them programmatically — they are never seen by the user.
+if st.button('__fab_open__', key='fab_toggle'):
+    st.session_state.fab_open = True
+    st.rerun()
+if st.button('__fab_close__', key='fab_close'):
+    st.session_state.fab_open = False
     st.rerun()
 
-# Panel marker — switches between poc-panel-marker (hidden) and poc-panel-open (visible)
-# The CSS selector targets the div immediately AFTER this marker span.
-panel_class = 'poc-panel-open' if st.session_state.fab_open else 'poc-panel-marker'
-st.markdown(f'<span class="{panel_class}"></span>', unsafe_allow_html=True)
+# Inject the FAB + overlay as pure HTML.
+# When fab_open=True the panel is visible; the JS bridge buttons are
+# hidden via CSS (opacity:0, pointer-events:none, height:0).
+poc_panel_display = 'flex' if st.session_state.fab_open else 'none'
+poc_backdrop_display = 'block' if st.session_state.fab_open else 'none'
 
-with st.container():
-    st.markdown('### 🔍 Filtres (POC)')
-    st.caption('Ceci est un test — ce champ ne filtre rien encore.')
-    poc_search = st.text_input(
-        'Recherche test',
-        placeholder='Tapez quelque chose...',
-        key='poc_search_test'
-    )
-    if st.button('✕ Fermer', key='fab_close'):
-        st.session_state.fab_open = False
-        st.rerun()
+st.markdown(f"""
+<style>
+/* Hide the two bridge buttons completely */
+button[kind="secondary"][data-testid="stBaseButton-secondary"]:has(> div > p:first-child) {{
+    display: none !important;
+}}
+/* Scope: only hide buttons whose label starts with __ */
+</style>
+
+<!-- Backdrop -->
+<div id="poc-backdrop" onclick="closePocPanel()"
+     style="display:{poc_backdrop_display}; position:fixed; inset:0;
+            background:rgba(0,0,0,0.55); z-index:1998;"></div>
+
+<!-- FAB button (always fixed bottom-right) -->
+<button id="poc-fab" onclick="openPocPanel()"
+        style="position:fixed; bottom:28px; right:28px; z-index:2000;
+               width:56px; height:56px; border-radius:50%; border:2px solid #555;
+               background:#3a3a3a; color:white; font-size:22px; cursor:pointer;
+               box-shadow:0 4px 16px rgba(0,0,0,0.5); display:flex;
+               align-items:center; justify-content:center;">
+    ⚙️
+</button>
+
+<!-- Filter panel (bottom sheet) -->
+<div id="poc-panel"
+     style="display:{poc_panel_display}; position:fixed; bottom:0; left:0; right:0;
+            z-index:1999; max-height:70vh; overflow-y:auto;
+            background:#232427; border-radius:20px 20px 0 0;
+            padding:24px 20px 40px 20px; flex-direction:column; gap:12px;
+            box-shadow:0 -4px 30px rgba(0,0,0,0.6);">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+        <span style="color:white; font-size:18px; font-weight:600;">🔍 Filtres (POC)</span>
+        <button onclick="closePocPanel()"
+                style="background:none; border:none; color:#999; font-size:24px;
+                       cursor:pointer; padding:4px 8px;">✕</button>
+    </div>
+    <p style="color:#999; font-size:13px; margin:0 0 12px 0;">
+        Ceci est un test — ce champ ne filtre rien encore.
+    </p>
+</div>
+
+<script>
+function openPocPanel() {{
+    // Show panel + backdrop immediately in HTML (instant feedback)
+    document.getElementById('poc-panel').style.display = 'flex';
+    document.getElementById('poc-backdrop').style.display = 'block';
+    // Then tell Python by clicking the hidden open bridge button
+    const btns = window.parent.document.querySelectorAll('button[kind="secondary"]');
+    for (const btn of btns) {{
+        if (btn.innerText.trim() === '__fab_open__') {{ btn.click(); break; }}
+    }}
+}}
+function closePocPanel() {{
+    document.getElementById('poc-panel').style.display = 'none';
+    document.getElementById('poc-backdrop').style.display = 'none';
+    const btns = window.parent.document.querySelectorAll('button[kind="secondary"]');
+    for (const btn of btns) {{
+        if (btn.innerText.trim() === '__fab_close__') {{ btn.click(); break; }}
+    }}
+}}
+</script>
+""", unsafe_allow_html=True)
 
 # =============================================================
 # SIDEBAR - Filtres
