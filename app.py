@@ -204,6 +204,10 @@ df['scraped_date_dt'] = pd.to_datetime(df['scraped_date'], errors='coerce').dt.d
 if 'favorites' not in st.session_state:
     st.session_state.favorites = load_favorites_from_url()
 
+# POC — mobile FAB panel toggle state
+if 'fab_open' not in st.session_state:
+    st.session_state.fab_open = False
+
 # =============================================================
 # HEADER - Logo
 # =============================================================
@@ -214,6 +218,44 @@ st.markdown(f"""
         <p class="logo-text">Nant'Immo</p>
     </div>
 """, unsafe_allow_html=True)
+
+# =============================================================
+# POC — MOBILE FAB + FILTER OVERLAY
+# Nothing here touches the sidebar. Sidebar is 100% intact.
+# The FAB button is a real st.button made position:fixed via CSS.
+# The panel is a real st.container rendered here in the page flow,
+# visually repositioned to a bottom-sheet via CSS.
+# The marker spans are the CSS targeting anchors (see styles.css).
+# =============================================================
+
+# Backdrop (shown when panel is open — pure HTML, no Python interaction needed)
+if st.session_state.fab_open:
+    st.markdown('<div class="poc-backdrop poc-backdrop-open"></div>', unsafe_allow_html=True)
+else:
+    st.markdown('<div class="poc-backdrop"></div>', unsafe_allow_html=True)
+
+# FAB button — the marker span immediately before it is the CSS hook
+st.markdown('<span class="fab-marker"></span>', unsafe_allow_html=True)
+if st.button('⚙️', key='fab_toggle'):
+    st.session_state.fab_open = not st.session_state.fab_open
+    st.rerun()
+
+# Panel marker — switches between poc-panel-marker (hidden) and poc-panel-open (visible)
+# The CSS selector targets the div immediately AFTER this marker span.
+panel_class = 'poc-panel-open' if st.session_state.fab_open else 'poc-panel-marker'
+st.markdown(f'<span class="{panel_class}"></span>', unsafe_allow_html=True)
+
+with st.container():
+    st.markdown('### 🔍 Filtres (POC)')
+    st.caption('Ceci est un test — ce champ ne filtre rien encore.')
+    poc_search = st.text_input(
+        'Recherche test',
+        placeholder='Tapez quelque chose...',
+        key='poc_search_test'
+    )
+    if st.button('✕ Fermer', key='fab_close'):
+        st.session_state.fab_open = False
+        st.rerun()
 
 # =============================================================
 # SIDEBAR - Filtres
