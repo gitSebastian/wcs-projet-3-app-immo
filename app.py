@@ -245,11 +245,17 @@ poc_backdrop_display = 'block' if st.session_state.fab_open else 'none'
 
 st.markdown(f"""
 <style>
-/* Hide the two bridge buttons completely */
-button[kind="secondary"][data-testid="stBaseButton-secondary"]:has(> div > p:first-child) {{
-    display: none !important;
+/* Hide bridge buttons by targeting their data-testid + text content */
+[data-testid="stBaseButton-secondary"]:has(p) {{
+    /* Can't filter by text in CSS alone — hide ALL secondary buttons in this
+       block by wrapping them in a zero-height container via their parent */
 }}
-/* Scope: only hide buttons whose label starts with __ */
+/* Target the stElementContainer wrappers of the two bridge buttons.
+   They are the first two stElementContainer siblings after the POC comment.
+   Reliable approach: hide any button whose visible label contains __ */
+[data-testid="stBaseButton-secondary"] p {{
+    /* Make the label invisible but keep the button clickable for JS */
+}}
 </style>
 
 <!-- Backdrop -->
@@ -278,7 +284,7 @@ button[kind="secondary"][data-testid="stBaseButton-secondary"]:has(> div > p:fir
         <span style="color:white; font-size:18px; font-weight:600;">🔍 Filtres (POC)</span>
         <button onclick="closePocPanel()"
                 style="background:none; border:none; color:#999; font-size:24px;
-                       cursor:pointer; padding:4px 8px;">✕</button>
+                       cursor:pointer; padding:4px 8px; line-height:1;">✕</button>
     </div>
     <p style="color:#999; font-size:13px; margin:0 0 12px 0;">
         Ceci est un test — ce champ ne filtre rien encore.
@@ -286,22 +292,54 @@ button[kind="secondary"][data-testid="stBaseButton-secondary"]:has(> div > p:fir
 </div>
 
 <script>
+// Find a Streamlit button by its exact label text and click it.
+// Uses data-testid which is stable; searches all buttons in the document.
+function clickStreamlitButton(label) {{
+    // Streamlit renders button text inside a <p> inside the button
+    const doc = window.parent !== window ? window.parent.document : document;
+    const btns = doc.querySelectorAll('[data-testid="stBaseButton-secondary"]');
+    for (const btn of btns) {{
+        const p = btn.querySelector('p');
+        if (p && p.innerText.trim() === label) {{
+            btn.click();
+            return true;
+        }}
+    }}
+    return false;
+}}
+
 function openPocPanel() {{
-    // Show panel + backdrop immediately in HTML (instant feedback)
     document.getElementById('poc-panel').style.display = 'flex';
     document.getElementById('poc-backdrop').style.display = 'block';
-    // Then tell Python by clicking the hidden open bridge button
-    const btns = window.parent.document.querySelectorAll('button[kind="secondary"]');
-    for (const btn of btns) {{
-        if (btn.innerText.trim() === '__fab_open__') {{ btn.click(); break; }}
-    }}
+    clickStreamlitButton('__fab_open__');
 }}
+
 function closePocPanel() {{
     document.getElementById('poc-panel').style.display = 'none';
     document.getElementById('poc-backdrop').style.display = 'none';
-    const btns = window.parent.document.querySelectorAll('button[kind="secondary"]');
+    clickStreamlitButton('__fab_close__');
+}}
+
+// Hide bridge buttons as soon as DOM is ready — JS is more reliable
+// than CSS for text-based targeting
+document.addEventListener('DOMContentLoaded', function() {{
+    hideBridgeButtons();
+}});
+// Also run immediately and after a short delay to catch Streamlit's
+// async render cycle
+hideBridgeButtons();
+setTimeout(hideBridgeButtons, 800);
+
+function hideBridgeButtons() {{
+    const doc = window.parent !== window ? window.parent.document : document;
+    const btns = doc.querySelectorAll('[data-testid="stBaseButton-secondary"]');
     for (const btn of btns) {{
-        if (btn.innerText.trim() === '__fab_close__') {{ btn.click(); break; }}
+        const p = btn.querySelector('p');
+        if (p && (p.innerText.trim() === '__fab_open__' || p.innerText.trim() === '__fab_close__')) {{
+            // Hide the entire stElementContainer wrapper (parent of the button wrapper)
+            const container = btn.closest('[data-testid="stElementContainer"]') || btn.parentElement.parentElement;
+            if (container) container.style.display = 'none';
+        }}
     }}
 }}
 </script>
