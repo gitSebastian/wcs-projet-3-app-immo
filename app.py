@@ -63,7 +63,7 @@ def load_data_from_db():
     conn = psycopg2.connect(DATABASE_URL, connect_timeout=10)
     conn.autocommit = True
     try:
-        query = 'SELECT * FROM properties ORDER BY scraped_date::date DESC, id ASC'
+        query = 'SELECT * FROM properties ORDER BY scraped_date::date DESC, id DESC'
         df = pd.read_sql_query(query, conn)
     finally:
         conn.close()
