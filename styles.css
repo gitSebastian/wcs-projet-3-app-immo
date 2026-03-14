@@ -232,17 +232,24 @@
 
 div[data-testid="stVerticalBlock"] div:has(div.fab-anchor) {
     position: fixed;
-    bottom: 2rem;
-    right: 2rem;
+    bottom: 5rem;
+    right: 0rem;
     z-index: 9999;
     width: fit-content;
 }
 /* FAB button — round */
 .st-key-fab_open_filters button {
-    border-radius: 50% !important;
+    border-radius: 8px 0 0 8px !important;
     width: 3.5rem !important;
     height: 3.5rem !important;
-    /* etc. */
+    border: 0 !important;
+    background-color: #10B981 !important;
+}
+
+.st-key-fab_open_filters button p {
+    font-size: 3rem !important;
+    font-weight: bold;
+    color: white;
 }
 
 /* Apply button inside dialog — rectangular */

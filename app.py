@@ -423,7 +423,7 @@ with fab:
     <div class="fab-anchor"/>
     """, unsafe_allow_html=True)
 
-    if st.button("⚙️", key="fab_open_filters"):
+    if st.button("⚙\uFE0E", key="fab_open_filters"):
         filter_panel()
 
 # =============================================================
