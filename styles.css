@@ -200,15 +200,6 @@
 }
 
 /* =============================================================
-   SIDEBAR
-   ============================================================= */
-
-[data-testid="stSidebar"] hr {
-    margin-top: 0.4rem;
-    margin-bottom: 1.5rem;
-}
-
-/* =============================================================
    BOUTON FAVORI (coeur)
    Streamlit force certains styles, donc !important nécessaire
    ============================================================= */
@@ -233,4 +224,55 @@
     border: none !important;
     font-size: 20px !important;
     padding: 14px 16px !important;
+}
+
+/* =============================================================
+   FILTERS DIALOG
+   ============================================================= */
+
+div[data-testid="stVerticalBlock"] div:has(div.fab-anchor) {
+    position: fixed;
+    bottom: 2rem;
+    right: 2rem;
+    z-index: 9999;
+    width: fit-content;
+}
+/* FAB button — round */
+.st-key-fab_open_filters button {
+    border-radius: 50% !important;
+    width: 3.5rem !important;
+    height: 3.5rem !important;
+    /* etc. */
+}
+
+/* Apply button inside dialog — rectangular */
+div[data-testid="stDialog"] button[kind="primary"] {
+    border-radius: 8px !important;
+    width: 100% !important;
+    height: auto !important;
+    font-size: 1rem !important;
+    box-shadow: none !important;
+    background-color: #10B981 !important;
+    border: none !important;
+    color: white !important;
+}
+
+/* All other buttons inside dialog (if any) */
+div[data-testid="stDialog"] div:has(div) button,
+div[data-testid="stDialog"] button {
+    border-radius: 0 !important;
+}
+
+/* Nulls the dialog's top padding */
+div[data-testid="stDialog"] > div:first-child {
+    padding-top: 0 !important;      
+}
+            
+/* Inner dialog content — edge-to-edge */
+div[data-testid="stDialog"],
+div[data-testid="stDialog"] div[role="dialog"] {
+    background-color: var(--bg-sidebar) !important;
+    border-radius: 0 !important;
+    margin: 0 !important;
+    box-shadow: none !important;
 }

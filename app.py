@@ -1,5 +1,5 @@
 # =============================================================
-# streamlit run WCS/github/wcs-projet-3-app-immo/app.py --server.address 192.168.1.134
+# streamlit run WCS/github/wcs-projet-3-app-immo/app.py --server.address 192.168.1.22
 # =============================================================
 
 import streamlit as st
@@ -10,6 +10,7 @@ import os
 import re
 from datetime import date, timedelta
 from pathlib import Path
+from streamlit_float import *
 
 # =============================================================
 # CONFIG
@@ -204,9 +205,34 @@ df['scraped_date_dt'] = pd.to_datetime(df['scraped_date'], errors='coerce').dt.d
 if 'favorites' not in st.session_state:
     st.session_state.favorites = load_favorites_from_url()
 
-# POC — mobile FAB panel toggle state
-if 'fab_open' not in st.session_state:
-    st.session_state.fab_open = False
+# Applied filter state — persists across dialog open/close cycles.
+# Initialised from URL params so bookmarked links still work on first load.
+if 'applied_search' not in st.session_state:
+    st.session_state.applied_search = st.query_params.get("search", "")
+if 'applied_show_favorites' not in st.session_state:
+    st.session_state.applied_show_favorites = False
+if 'applied_price_min' not in st.session_state:
+    _p = st.query_params.get("price_min")
+    st.session_state.applied_price_min = format_price_input(int(_p) if _p else None)
+if 'applied_price_max' not in st.session_state:
+    _p = st.query_params.get("price_max")
+    st.session_state.applied_price_max = format_price_input(int(_p) if _p else None)
+if 'applied_m2_min' not in st.session_state:
+    _v = st.query_params.get("m2_min")
+    st.session_state.applied_m2_min = int(_v) if _v else None
+if 'applied_m2_max' not in st.session_state:
+    _v = st.query_params.get("m2_max")
+    st.session_state.applied_m2_max = int(_v) if _v else None
+if 'applied_sort_label' not in st.session_state:
+    st.session_state.applied_sort_label = "Date (récent → ancien)"
+if 'applied_selected_sites' not in st.session_state:
+    st.session_state.applied_selected_sites = None  # None = not yet resolved; resolved after df loads
+if 'applied_date_min' not in st.session_state:
+    _d = st.query_params.get("date_min")
+    st.session_state.applied_date_min = _d  # stored as ISO string or None
+if 'applied_date_max' not in st.session_state:
+    _d = st.query_params.get("date_max")
+    st.session_state.applied_date_max = _d  # stored as ISO string or None
 
 # =============================================================
 # HEADER - Logo
@@ -220,178 +246,239 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # =============================================================
-# SIDEBAR - Filtres
+# FLOAT FILTERS
 # =============================================================
 
-# Valeurs disponibles
-available_sites = sorted(df['site'].unique())
+float_init()  # required once at app startup
 
-# Date bounds from data
-date_min_data = df['scraped_date_dt'].min()
-date_max_data = df['scraped_date_dt'].max()
+# ── Filter dialog ──────────────────────────────────────────────
+@st.dialog("⚙️ Filtres", width="large")
+def filter_panel():
+    search_term = st.text_input(
+        "🔎 Chercher",
+        value=st.query_params.get("search", ""),
+        placeholder="Rechercher",
+        key="search_term"
+    )
 
-# Recherche
-search_term = st.sidebar.text_input(
-    "🔎  Chercher",
-    value=st.query_params.get("search", ""),
-    placeholder="Rechercher"
-)
+    st.divider()
 
-st.sidebar.divider()
+    show_favorites = st.checkbox("⭐ Favoris seulement", value=False, key="show_favorites")
 
-# Favoris seulement
-show_favorites = st.sidebar.checkbox("⭐ Favoris seulement", value=False)
+    st.divider()
 
-st.sidebar.divider()
+    # ------------------------------------------------------------------
+    # Filtres de prix — text_input with thousand-space formatting
+    # ------------------------------------------------------------------
+    url_price_min = st.query_params.get("price_min")
+    url_price_max = st.query_params.get("price_max")
 
-# ------------------------------------------------------------------
-# Filtres de prix — text_input with thousand-space formatting
-# ------------------------------------------------------------------
-url_price_min = st.query_params.get("price_min")
-url_price_max = st.query_params.get("price_max")
+    default_price_min_str = format_price_input(int(url_price_min) if url_price_min else None)
+    default_price_max_str = format_price_input(int(url_price_max) if url_price_max else None)
 
-default_price_min_str = format_price_input(int(url_price_min) if url_price_min else None)
-default_price_max_str = format_price_input(int(url_price_max) if url_price_max else None)
+    raw_price_min = st.text_input(
+        "💰 Prix min. (€)", value=default_price_min_str, placeholder="ex: 150 000", key="raw_price_min"
+    )
+    raw_price_max = st.text_input(
+        "💰 Prix max. (€)", value=default_price_max_str, placeholder="ex: 400 000", key="raw_price_max"
+    )
 
-raw_price_min = st.sidebar.text_input(
-    "💰 Prix min. (€)",
-    value=default_price_min_str,
-    placeholder="ex: 150 000"
-)
-raw_price_max = st.sidebar.text_input(
-    "💰 Prix max. (€)",
-    value=default_price_max_str,
-    placeholder="ex: 400 000"
-)
+    price_min = parse_price_input(raw_price_min)
+    price_max = parse_price_input(raw_price_max)
 
-price_min = parse_price_input(raw_price_min)
-price_max = parse_price_input(raw_price_max)
+    if raw_price_min.strip() and price_min is None:
+        st.caption("⚠️ Prix min. invalide")
+    if raw_price_max.strip() and price_max is None:
+        st.caption("⚠️ Prix max. invalide")
 
-# Show a validation hint if the user typed something unparseable
-if raw_price_min.strip() and price_min is None:
-    st.sidebar.caption("⚠️ Prix min. invalide")
-if raw_price_max.strip() and price_max is None:
-    st.sidebar.caption("⚠️ Prix max. invalide")
+    st.divider()
 
-st.sidebar.divider()
+    # ------------------------------------------------------------------
+    # Filtres de surface (m²)
+    # ------------------------------------------------------------------
+    m2_min_data = df['square_meters'].min()
+    m2_max_data = df['square_meters'].max()
 
-# ------------------------------------------------------------------
-# Filtres de surface (m²)
-# ------------------------------------------------------------------
-m2_min_data = df['square_meters'].min()
-m2_max_data = df['square_meters'].max()
+    min_m2 = int(m2_min_data) if pd.notna(m2_min_data) else 0
+    max_m2 = int(m2_max_data) if pd.notna(m2_max_data) else 1000
 
-min_m2 = int(m2_min_data) if pd.notna(m2_min_data) else 0
-max_m2 = int(m2_max_data) if pd.notna(m2_max_data) else 1000
+    url_m2_min = st.query_params.get("m2_min")
+    url_m2_max = st.query_params.get("m2_max")
 
-url_m2_min = st.query_params.get("m2_min")
-url_m2_max = st.query_params.get("m2_max")
+    default_m2_min = int(url_m2_min) if url_m2_min else None
+    default_m2_max = int(url_m2_max) if url_m2_max else None
 
-default_m2_min = int(url_m2_min) if url_m2_min else None
-default_m2_max = int(url_m2_max) if url_m2_max else None
+    m2_min = st.number_input(
+        "📏 Surface min. (m²)", min_value=0, max_value=max_m2, value=default_m2_min, step=5,
+        placeholder="Pas de minimum", key="m2_min"
+    )
+    m2_max = st.number_input(
+        "📏 Surface max. (m²)", min_value=0, max_value=max_m2, value=default_m2_max, step=5,
+        placeholder="Pas de maximum", key="m2_max"
+    )
 
-m2_min = st.sidebar.number_input(
-    "📏 Surface min. (m²)", 
-    min_value=0, 
-    max_value=max_m2,
-    value=default_m2_min,
-    step=5,
-    placeholder="Pas de minimum"
-)
+    st.divider()
 
-m2_max = st.sidebar.number_input(
-    "📏 Surface max. (m²)", 
-    min_value=0, 
-    max_value=max_m2,
-    value=default_m2_max,
-    step=5,
-    placeholder="Pas de maximum"
-)
+    # ------------------------------------------------------------------
+    # Tri
+    # ------------------------------------------------------------------
+    SORT_OPTIONS = {
+        "Date (récent → ancien)":  (None,              None),
+        "Prix (croissant)":        ("price_numeric",   True),
+        "Prix (décroissant)":      ("price_numeric",   False),
+        "Prix/m² (croissant)":     ("price_per_m2",    True),
+        "Prix/m² (décroissant)":   ("price_per_m2",    False),
+        "Surface (croissante)":    ("square_meters",   True),
+        "Surface (décroissante)":  ("square_meters",   False),
+    }
 
-st.sidebar.divider()
+    sort_label = st.selectbox(
+        "↕️ Trier par", options=list(SORT_OPTIONS.keys()), index=0, key="sort_label"
+    )
+    sort_col, sort_asc = SORT_OPTIONS[sort_label]
 
-# ------------------------------------------------------------------
-# Tri
-# ------------------------------------------------------------------
+    st.divider()
+
+    # ------------------------------------------------------------------
+    # Filtre Sources
+    # ------------------------------------------------------------------
+    st.markdown("### 🏢 Sources")
+    with st.expander('Sources', expanded=False):
+        available_sites = sorted(df['site'].unique())
+        default_sites = get_url_param_list('sites', available_sites)
+        
+        selected_sites = []
+        for site in available_sites:
+            is_selected = st.checkbox(
+                site, 
+                value=(site in default_sites), 
+                key=f"site_{site}"
+            )
+            if is_selected:
+                selected_sites.append(site)
+
+    st.divider()
+
+    # ------------------------------------------------------------------
+    # Filtre Dates
+    # ------------------------------------------------------------------
+    date_min_data = df['scraped_date_dt'].min()
+    date_max_data = df['scraped_date_dt'].max()
+
+    url_date_min = st.query_params.get("date_min")
+    url_date_max = st.query_params.get("date_max")
+
+    try:
+        default_date_min = date.fromisoformat(url_date_min) if url_date_min else date_min_data
+        default_date_max = date.fromisoformat(url_date_max) if url_date_max else date_max_data
+    except (ValueError, TypeError):
+        default_date_min = date_min_data
+        default_date_max = date_max_data
+
+    default_date_min = max(default_date_min, date_min_data)
+    default_date_max = min(default_date_max, date_max_data)
+
+    date_range = st.date_input(
+        "📅 Période", value=(default_date_min, default_date_max),
+        min_value=date_min_data, max_value=date_max_data, format="DD/MM/YYYY", key="date_range"
+    )
+
+    if isinstance(date_range, (list, tuple)) and len(date_range) == 2:
+        selected_date_min, selected_date_max = date_range
+    elif isinstance(date_range, (list, tuple)) and len(date_range) == 1:
+        selected_date_min = date_range[0]
+        selected_date_max = date_max_data
+    else:
+        selected_date_min = date_range
+        selected_date_max = date_max_data
+
+    st.divider()
+
+    # Apply button — copies all local widget values into persistent session
+    # state keys, then reruns. The main body reads exclusively from those keys.
+    if st.button("Appliquer", use_container_width=True, type="primary", key="fab_apply_filters"):
+        st.session_state.applied_search           = search_term
+        st.session_state.applied_show_favorites   = show_favorites
+        st.session_state.applied_price_min        = raw_price_min
+        st.session_state.applied_price_max        = raw_price_max
+        st.session_state.applied_m2_min           = m2_min
+        st.session_state.applied_m2_max           = m2_max
+        st.session_state.applied_sort_label       = sort_label
+        st.session_state.applied_selected_sites   = selected_sites
+        st.session_state.applied_date_min         = selected_date_min.isoformat()
+        st.session_state.applied_date_max         = selected_date_max.isoformat()
+        st.rerun()
+
+    st.divider()
+
+    # Infos en bas
+    st.caption(f"Mis à jour: {df['scraped_date'].max()}")
+    st.caption(f"Total: {len(df)} annonces")
+
+# ── FAB button ─────────────────────────────────────────────────
+fab = st.container()
+with fab:
+    # Style the button as a round FAB
+    st.markdown("""
+    <div class="fab-anchor"/>
+    """, unsafe_allow_html=True)
+
+    if st.button("⚙️", key="fab_open_filters"):
+        filter_panel()
+
+# =============================================================
+# RESOLVE APPLIED FILTER VALUES
+# (reads from session state written by the dialog's Apply button)
+# =============================================================
+
+available_sites  = sorted(df['site'].unique())
+date_min_data    = df['scraped_date_dt'].min()
+date_max_data    = df['scraped_date_dt'].max()
+
+# Sites: first Apply hasn't happened yet → fall back to URL params / select-all
+if st.session_state.applied_selected_sites is None:
+    selected_sites = get_url_param_list('sites', available_sites)
+else:
+    selected_sites = st.session_state.applied_selected_sites
+
+# Search
+search_term    = st.session_state.applied_search
+show_favorites = st.session_state.applied_show_favorites
+
+# Price
+raw_price_min  = st.session_state.applied_price_min
+raw_price_max  = st.session_state.applied_price_max
+price_min      = parse_price_input(raw_price_min)
+price_max      = parse_price_input(raw_price_max)
+
+# Surface
+m2_min = st.session_state.applied_m2_min
+m2_max = st.session_state.applied_m2_max
+
+# Sort
 SORT_OPTIONS = {
-    # None = preserve DB order (created_at DESC, scrape_order ASC)
-    "Date (récent → ancien)":  (None,              None),
-    "Prix (croissant)":        ("price_numeric",   True),
-    "Prix (décroissant)":      ("price_numeric",   False),
-    "Prix/m² (croissant)":     ("price_per_m2",    True),
-    "Prix/m² (décroissant)":   ("price_per_m2",    False),
-    "Surface (croissante)":    ("square_meters",   True),
-    "Surface (décroissante)":  ("square_meters",   False),
+    "Date (récent → ancien)":  (None,            None),
+    "Prix (croissant)":        ("price_numeric",  True),
+    "Prix (décroissant)":      ("price_numeric",  False),
+    "Prix/m² (croissant)":     ("price_per_m2",   True),
+    "Prix/m² (décroissant)":   ("price_per_m2",   False),
+    "Surface (croissante)":    ("square_meters",  True),
+    "Surface (décroissante)":  ("square_meters",  False),
 }
-
-sort_label = st.sidebar.selectbox(
-    "↕️ Trier par",
-    options=list(SORT_OPTIONS.keys()),
-    index=0
-)
+sort_label = st.session_state.applied_sort_label
 sort_col, sort_asc = SORT_OPTIONS[sort_label]
 
-st.sidebar.divider()
-
-# Filtre Sources
-with st.sidebar.expander('🏢 Sources', expanded=True):
-    default_sites = get_url_param_list('sites', available_sites)
-    selected_sites = []
-    
-    for site in available_sites:
-        is_selected = st.checkbox(
-            site, 
-            value=(site in default_sites), 
-            key=f"site_{site}"
-        )
-        if is_selected:
-            selected_sites.append(site)
-
-st.sidebar.divider()
-
-# ------------------------------------------------------------------
-# Filtre Dates — date_input range (replaces checkbox list)
-# ------------------------------------------------------------------
-# Restore range from URL params if present
-url_date_min = st.query_params.get("date_min")
-url_date_max = st.query_params.get("date_max")
-
+# Dates
 try:
-    default_date_min = date.fromisoformat(url_date_min) if url_date_min else date_min_data
-    default_date_max = date.fromisoformat(url_date_max) if url_date_max else date_max_data
+    selected_date_min = date.fromisoformat(st.session_state.applied_date_min) if st.session_state.applied_date_min else date_min_data
+    selected_date_max = date.fromisoformat(st.session_state.applied_date_max) if st.session_state.applied_date_max else date_max_data
 except (ValueError, TypeError):
-    default_date_min = date_min_data
-    default_date_max = date_max_data
-
-# Clamp defaults to actual data bounds (guards against stale URL params)
-default_date_min = max(default_date_min, date_min_data)
-default_date_max = min(default_date_max, date_max_data)
-
-date_range = st.sidebar.date_input(
-    "📅 Période",
-    value=(default_date_min, default_date_max),
-    min_value=date_min_data,
-    max_value=date_max_data,
-    format="DD/MM/YYYY",
-)
-
-# date_input returns a tuple of 1 or 2 dates depending on user interaction
-if isinstance(date_range, (list, tuple)) and len(date_range) == 2:
-    selected_date_min, selected_date_max = date_range
-elif isinstance(date_range, (list, tuple)) and len(date_range) == 1:
-    # User has only picked the start date — keep max open
-    selected_date_min = date_range[0]
-    selected_date_max = date_max_data
-else:
-    # Single date object (shouldn't happen with range mode, but be safe)
-    selected_date_min = date_range
+    selected_date_min = date_min_data
     selected_date_max = date_max_data
 
-st.sidebar.divider()
-
-# Infos en bas du sidebar
-st.sidebar.caption(f"Mis à jour: {df['scraped_date'].max()}")
-st.sidebar.caption(f"Total: {len(df)} annonces")
+# Clamp to actual data bounds (guards against stale session values)
+selected_date_min = max(selected_date_min, date_min_data)
+selected_date_max = min(selected_date_max, date_max_data)
 
 # =============================================================
 # MISE À JOUR URL
@@ -399,7 +486,7 @@ st.sidebar.caption(f"Total: {len(df)} annonces")
 
 st.query_params.update({
     "sites":       ",".join(selected_sites),
-    "known_sites": ",".join(available_sites),   # full universe at write time
+    "known_sites": ",".join(available_sites),
     "date_min":    selected_date_min.isoformat(),
     "date_max":    selected_date_max.isoformat(),
     "search":      search_term,
