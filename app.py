@@ -255,7 +255,7 @@ float_init()  # required once at app startup
 @st.dialog("⚙️ Filtres", width="large")
 def filter_panel():
     search_term = st.text_input(
-        "🔎 Chercher",
+        "🔎 Chercher par mot-clé",
         value=st.query_params.get("search", ""),
         placeholder="Rechercher",
         key="search_term"
@@ -276,12 +276,15 @@ def filter_panel():
     default_price_min_str = format_price_input(int(url_price_min) if url_price_min else None)
     default_price_max_str = format_price_input(int(url_price_max) if url_price_max else None)
 
-    raw_price_min = st.text_input(
+    col1, col2 = st.columns(2)
+    with col1:
+        raw_price_min = st.text_input(
         "💰 Prix min. (€)", value=default_price_min_str, placeholder="ex: 150 000", key="raw_price_min"
-    )
-    raw_price_max = st.text_input(
+        )
+    with col2:
+        raw_price_max = st.text_input(
         "💰 Prix max. (€)", value=default_price_max_str, placeholder="ex: 400 000", key="raw_price_max"
-    )
+        )
 
     price_min = parse_price_input(raw_price_min)
     price_max = parse_price_input(raw_price_max)
@@ -308,15 +311,18 @@ def filter_panel():
     default_m2_min = int(url_m2_min) if url_m2_min else None
     default_m2_max = int(url_m2_max) if url_m2_max else None
 
-    m2_min = st.number_input(
+    col1, col2 = st.columns(2)
+    with col1:
+        m2_min = st.number_input(
         "📏 Surface min. (m²)", min_value=0, max_value=max_m2, value=default_m2_min, step=5,
         placeholder="Pas de minimum", key="m2_min"
-    )
-    m2_max = st.number_input(
+        )
+    with col2:
+        m2_max = st.number_input(
         "📏 Surface max. (m²)", min_value=0, max_value=max_m2, value=default_m2_max, step=5,
         placeholder="Pas de maximum", key="m2_max"
-    )
-
+        )
+    
     st.divider()
 
     # ------------------------------------------------------------------
