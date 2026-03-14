@@ -219,7 +219,7 @@
 
 [data-testid="stColumn"] [data-testid="stBaseButton-secondary"] {
     position: absolute;
-    top: -70px;
+    top: -72px;
     right: 18px;
     z-index: 1000 !important;
     width: auto !important;
