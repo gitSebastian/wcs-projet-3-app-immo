@@ -625,7 +625,13 @@ else:
         description = (raw_desc[:100] + '…') if len(raw_desc) > 100 else (raw_desc or 'Pas de description')
 
         is_favorited = row['id'] in st.session_state.favorites
-        heart_icon = "❤️" if is_favorited else "🤍"
+        heart_icon = "❤\uFE0E"
+        button_key = f"fav_{row['id']}"
+        heart_color = "#10B981" if is_favorited else "var(--text-gray)"
+        st.markdown(
+            f"<style>.st-key-fav_{row['id']} button p {{ color: {heart_color} !important; font-size: 1.6rem !important; }}</style>",
+            unsafe_allow_html=True
+        )
 
         # Build price bar. Constructed as a single-line f-string (no triple
         # quotes, no intermediate variable passed into another f-string) to
@@ -656,7 +662,7 @@ else:
             st.markdown(card_html, unsafe_allow_html=True)
             
             # Bouton favori
-            if st.button(heart_icon, key=f"fav_{row['id']}"):
+            if st.button(heart_icon, key=button_key, help="is_fav" if is_favorited else "not_fav"):
                 if is_favorited:
                     st.session_state.favorites.remove(row['id'])
                 else:

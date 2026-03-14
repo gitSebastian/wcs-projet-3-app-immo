@@ -67,6 +67,10 @@
     line-height: 3rem;
 }
 
+/* Heart button color is injected per-card via inline <style> using
+   the .st-key-fav_{id} wrapper class that Streamlit adds automatically.
+   See app.py card loop. */
+
 /* =============================================================
    STATS
    ============================================================= */
@@ -215,8 +219,8 @@
 
 [data-testid="stColumn"] [data-testid="stBaseButton-secondary"] {
     position: absolute;
-    top: -68px;
-    right: 15px;
+    top: -90px;
+    right: 18px;
     z-index: 1000 !important;
     width: auto !important;
     background: rgba(0, 0, 0, 0.0) !important;
