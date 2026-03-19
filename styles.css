@@ -231,6 +231,58 @@
 }
 
 /* =============================================================
+   PAGINATION NAV
+   Pure HTML flexbox row — no Streamlit columns involved.
+   ============================================================= */
+
+.page-nav {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1.2rem;
+    margin: 0 0 20px 0;
+}
+
+.page-nav-bottom {
+    margin-top: -40px;
+}
+
+.nav-btn {
+    color: var(--text-white) !important;
+    font-family: var(--font-body);
+    font-size: 14px;
+    text-decoration: none !important;
+    white-space: nowrap;
+    padding: 0.4rem 1rem;
+    border: 1px solid #444;
+    border-radius: var(--radius-small);
+    transition: background 0.15s ease;
+}
+
+.nav-btn:hover {
+    background: #333;
+}
+
+.nav-btn-edge {
+    padding-left: 0.6rem !important;
+    padding-right: 0.6rem !important;
+    font-size: 16px;
+}
+
+.nav-btn[aria-disabled="true"] {
+    color: var(--text-gray);
+    pointer-events: none;
+    border-color: #333;
+}
+
+.nav-label {
+    color: var(--text-gray);
+    font-family: var(--font-body);
+    font-size: 14px;
+    white-space: nowrap;
+}
+
+/* =============================================================
    FILTERS DIALOG
    ============================================================= */
 

@@ -1,5 +1,5 @@
 # =============================================================
-# streamlit run WCS/github/wcs-projet-3-app-immo/app.py --server.address 192.168.1.22
+# streamlit run WCS/github/wcs-projet-3-app-immo/app.py --server.address 192.168.1.35
 # =============================================================
 
 import streamlit as st
@@ -15,6 +15,8 @@ from streamlit_float import *
 # =============================================================
 # CONFIG
 # =============================================================
+
+PAGE_SIZE = 51  # Cards per page -- change here to test different values
 
 # 1. Grab the secret from Streamlit's storage
 if "DATABASE_URL" in st.secrets:
@@ -224,7 +226,21 @@ if 'applied_m2_max' not in st.session_state:
     _v = st.query_params.get("m2_max")
     st.session_state.applied_m2_max = int(_v) if _v else None
 if 'applied_sort_label' not in st.session_state:
-    st.session_state.applied_sort_label = "Date (récent → ancien)"
+    # Get sort from URL, default to "Date (récent → ancien)"
+    url_sort = st.query_params.get("sort", "Date (récent → ancien)")
+    # Validate it's a valid sort option
+    SORT_OPTIONS = {
+        "Date (récent → ancien)":  (None,              None),
+        "Prix (croissant)":        ("price_numeric",   True),
+        "Prix (décroissant)":      ("price_numeric",   False),
+        "Prix/m² (croissant)":     ("price_per_m2",    True),
+        "Prix/m² (décroissant)":   ("price_per_m2",    False),
+        "Surface (croissante)":    ("square_meters",   True),
+        "Surface (décroissante)":  ("square_meters",   False),
+    }
+    if url_sort not in SORT_OPTIONS:
+        url_sort = "Date (récent → ancien)"
+    st.session_state.applied_sort_label = url_sort
 if 'applied_selected_sites' not in st.session_state:
     st.session_state.applied_selected_sites = None  # None = not yet resolved; resolved after df loads
 if 'applied_date_min' not in st.session_state:
@@ -233,6 +249,9 @@ if 'applied_date_min' not in st.session_state:
 if 'applied_date_max' not in st.session_state:
     _d = st.query_params.get("date_max")
     st.session_state.applied_date_max = _d  # stored as ISO string or None
+if 'current_page' not in st.session_state:
+    _pg = st.query_params.get("page", "0")
+    st.session_state.current_page = int(_pg) if _pg.isdigit() else 0
 
 # =============================================================
 # HEADER - Logo
@@ -256,25 +275,23 @@ float_init()  # required once at app startup
 def filter_panel():
     search_term = st.text_input(
         "🔎 Chercher par mot-clé",
-        value=st.query_params.get("search", ""),
+        value=st.session_state.applied_search,
         placeholder="Rechercher",
         key="search_term"
     )
 
     st.divider()
 
-    show_favorites = st.checkbox("⭐ Favoris seulement", value=False, key="show_favorites")
+    show_favorites = st.checkbox("⭐ Favoris seulement", value=st.session_state.applied_show_favorites, key="show_favorites")
 
     st.divider()
 
     # ------------------------------------------------------------------
     # Filtres de prix — text_input with thousand-space formatting
     # ------------------------------------------------------------------
-    url_price_min = st.query_params.get("price_min")
-    url_price_max = st.query_params.get("price_max")
-
-    default_price_min_str = format_price_input(int(url_price_min) if url_price_min else None)
-    default_price_max_str = format_price_input(int(url_price_max) if url_price_max else None)
+    # Use session state values (initialized from URL on first load)
+    default_price_min_str = st.session_state.applied_price_min
+    default_price_max_str = st.session_state.applied_price_max
 
     col1, col2 = st.columns(2)
     with col1:
@@ -305,11 +322,9 @@ def filter_panel():
     min_m2 = int(m2_min_data) if pd.notna(m2_min_data) else 0
     max_m2 = int(m2_max_data) if pd.notna(m2_max_data) else 1000
 
-    url_m2_min = st.query_params.get("m2_min")
-    url_m2_max = st.query_params.get("m2_max")
-
-    default_m2_min = int(url_m2_min) if url_m2_min else None
-    default_m2_max = int(url_m2_max) if url_m2_max else None
+    # Use session state values (initialized from URL on first load)
+    default_m2_min = st.session_state.applied_m2_min
+    default_m2_max = st.session_state.applied_m2_max
 
     col1, col2 = st.columns(2)
     with col1:
@@ -338,8 +353,17 @@ def filter_panel():
         "Surface (décroissante)":  ("square_meters",   False),
     }
 
+    # Get current sort label from session state (which is initialized from URL on first load)
+    current_sort_label = st.session_state.applied_sort_label
+    # Ensure it's a valid option
+    if current_sort_label not in SORT_OPTIONS:
+        current_sort_label = "Date (récent → ancien)"
+    
     sort_label = st.selectbox(
-        "↕️ Trier par", options=list(SORT_OPTIONS.keys()), index=0, key="sort_label"
+        "↕️ Trier par", 
+        options=list(SORT_OPTIONS.keys()), 
+        index=list(SORT_OPTIONS.keys()).index(current_sort_label),
+        key="sort_label"
     )
     sort_col, sort_asc = SORT_OPTIONS[sort_label]
 
@@ -351,7 +375,12 @@ def filter_panel():
     st.markdown("### 🏢 Sources")
     with st.expander('Sources', expanded=False):
         available_sites = sorted(df['site'].unique())
-        default_sites = get_url_param_list('sites', available_sites)
+        
+        # Determine default sites: use session state if set, otherwise URL params
+        if st.session_state.applied_selected_sites is not None:
+            default_sites = st.session_state.applied_selected_sites
+        else:
+            default_sites = get_url_param_list('sites', available_sites)
         
         selected_sites = []
         for site in available_sites:
@@ -371,12 +400,10 @@ def filter_panel():
     date_min_data = df['scraped_date_dt'].min()
     date_max_data = df['scraped_date_dt'].max()
 
-    url_date_min = st.query_params.get("date_min")
-    url_date_max = st.query_params.get("date_max")
-
+    # Use session state values (initialized from URL on first load)
     try:
-        default_date_min = date.fromisoformat(url_date_min) if url_date_min else date_min_data
-        default_date_max = date.fromisoformat(url_date_max) if url_date_max else date_max_data
+        default_date_min = date.fromisoformat(st.session_state.applied_date_min) if st.session_state.applied_date_min else date_min_data
+        default_date_max = date.fromisoformat(st.session_state.applied_date_max) if st.session_state.applied_date_max else date_max_data
     except (ValueError, TypeError):
         default_date_min = date_min_data
         default_date_max = date_max_data
@@ -413,6 +440,7 @@ def filter_panel():
         st.session_state.applied_selected_sites   = selected_sites
         st.session_state.applied_date_min         = selected_date_min.isoformat()
         st.session_state.applied_date_max         = selected_date_max.isoformat()
+        st.session_state.current_page             = 0  # reset on every filter change
         st.rerun()
 
     st.divider()
@@ -500,7 +528,9 @@ st.query_params.update({
     "price_max":   str(price_max) if price_max is not None else "",
     "m2_min":      str(m2_min) if m2_min else "",
     "m2_max":      str(m2_max) if m2_max else "",
+    "sort":        sort_label,
     "favorites":   ",".join(str(x) for x in st.session_state.favorites),
+    "page":        str(st.session_state.current_page),
 })
 
 # =============================================================
@@ -607,70 +637,143 @@ if len(filtered_df) == 0:
     else:
         st.info("Aucune annonce avec ces filtres")
 else:
-    # Afficher les cartes en 3 colonnes
-    cols = st.columns(3)
-    
-    for idx, (_, row) in enumerate(filtered_df.iterrows()):
-        col = cols[idx % 3]
+    # Pagination
+    total_listings = len(filtered_df)
+    total_pages    = max(1, -(-total_listings // PAGE_SIZE))  # ceiling division
+    current_page   = min(st.session_state.current_page, total_pages - 1)  # clamp after filter
+    start          = current_page * PAGE_SIZE
+    end            = start + PAGE_SIZE
+    page_df        = filtered_df.iloc[start:end]
 
-        # Prix principal
-        price_display = format_price(row['price_numeric'])
+    # Nav bar — pure HTML links, no st.columns needed
+    def _nav_url(p):
+        """Build a URL for page p preserving all current query params."""
+        params = dict(st.query_params)
+        params['page'] = str(p)
+        return '?' + '&'.join(f'{k}={v}' for k, v in params.items())
 
-        # Prix au m² (shown only when both values are available)
-        price_m2_display = format_price_per_m2(row['price_per_m2'])
+    prev_url  = _nav_url(current_page - 1)
+    next_url  = _nav_url(current_page + 1)
+    first_url = _nav_url(0)
+    last_url  = _nav_url(total_pages - 1)
+    prev_attr  = '' if current_page > 0 else 'aria-disabled="true"'
+    next_attr  = '' if current_page < total_pages - 1 else 'aria-disabled="true"'
+    first_attr = '' if current_page > 0 else 'aria-disabled="true"'
+    last_attr  = '' if current_page < total_pages - 1 else 'aria-disabled="true"'
 
-        # Titre : nettoyer le préfixe/suffixe pour OuestFrance
-        raw_title = row['title'] if pd.notna(row['title']) else ''
-        if row['site'] == 'Ouest France Immo':
-            title = clean_ouestfrance_title(raw_title)
-        else:
-            title = raw_title
+    st.markdown(f"""
+        <div class="page-nav">
+            <a href="{first_url}" class="nav-btn nav-btn-edge" {first_attr} target="_self">&#8676;</a>
+            <a href="{prev_url}" class="nav-btn" {prev_attr} target="_self">&#8592; Pr&#233;c&#233;dente</a>
+            <span class="nav-label">Page {current_page + 1} / {total_pages}</span>
+            <a href="{next_url}" class="nav-btn" {next_attr} target="_self">Suivante &#8594;</a>
+            <a href="{last_url}" class="nav-btn nav-btn-edge" {last_attr} target="_self">&#8677;</a>
+        </div>
+    """, unsafe_allow_html=True)
 
-        # Description : tronquer à 100 caractères
-        raw_desc = row['description'] if pd.notna(row['description']) else ''
-        description = (raw_desc[:100] + '…') if len(raw_desc) > 100 else (raw_desc or 'Pas de description')
+    # Install a persistent scroll-to-top observer once per page load.
+    # Uses an iframe (components.v1.html) to inject a script tag into the
+    # parent document via document.createElement — avoids iframe sandbox
+    # restrictions while surviving Streamlit reruns. The observer watches
+    # stMain for DOM mutations and scrolls to top 150ms after they settle.
+    # Guard on window.__nantimmoObs ensures it only installs once.
+    st.components.v1.html("""
+        <script>
+        if (!window.parent.__nantimmoObs) {
+            var s = window.parent.document.createElement('script');
+            s.textContent = `
+                var el = document.querySelector('[data-testid=stMain]');
+                if (el && !window.__nantimmoObs) {
+                    var t = null;
+                    window.__nantimmoObs = new MutationObserver(function() {
+                        clearTimeout(t);
+                        t = setTimeout(function() { el.scrollTop = 0; }, 150);
+                    });
+                    window.__nantimmoObs.observe(el, { childList: true, subtree: true });
+                }
+            `;
+            window.parent.document.head.appendChild(s);
+            window.parent.__nantimmoObs = true;
+        }
+        </script>
+    """, height=0)
 
-        is_favorited = row['id'] in st.session_state.favorites
-        heart_icon = "❤\uFE0E"
-        button_key = f"fav_{row['id']}"
-        heart_color = "#10B981" if is_favorited else "var(--text-gray)"
-        st.markdown(
-            f"<style>.st-key-fav_{row['id']} button p {{ color: {heart_color} !important; font-size: 1.6rem !important; }}</style>",
-            unsafe_allow_html=True
-        )
 
-        # Build price bar. Constructed as a single-line f-string (no triple
-        # quotes, no intermediate variable passed into another f-string) to
-        # avoid any whitespace/newline artefacts that can confuse Streamlit's
-        # markdown-to-HTML pipeline.
-        if price_m2_display:
-            price_block = f'<div class="card-price-container"><span>🏷️</span><span class="card-price">{price_display}</span><span class="card-price-m2">{price_m2_display}</span></div>'
-        else:
-            price_block = f'<div class="card-price-container"><span>🏷️</span><span class="card-price">{price_display}</span></div>'
+    # Afficher les cartes, row-by-row (3 per row) to avoid empty column gaps on last row
+    for chunk_start in range(0, len(page_df), 3):
+        chunk = page_df.iloc[chunk_start:chunk_start+3]
+        cols = st.columns(3) if len(chunk) == 3 else st.columns(len(chunk))
+        for col, (_, row) in zip(cols, chunk.iterrows()):
 
-        with col:
-            card_html = f"""
-            <div class="card-wrapper">
-                <a href="{row['url']}" target="_blank" class="card-link">
-                    <div class="card">
-                        <img src="{row['image_url']}" class="card-image" alt="Photo">
-                        <div class="card-meta">
-                                <div class="card-logo-wrapper">{logo_svg_text}</div>
-                                <div class="card-meta-text">{row['site']} · {row['scraped_date']}</div>
+            # Prix principal
+            price_display = format_price(row['price_numeric'])
+
+            # Prix au m² (shown only when both values are available)
+            price_m2_display = format_price_per_m2(row['price_per_m2'])
+
+            # Titre : nettoyer le préfixe/suffixe pour OuestFrance
+            raw_title = row['title'] if pd.notna(row['title']) else ''
+            if row['site'] == 'Ouest France Immo':
+                title = clean_ouestfrance_title(raw_title)
+            else:
+                title = raw_title
+
+            # Description : tronquer à 100 caractères
+            raw_desc = row['description'] if pd.notna(row['description']) else ''
+            description = (raw_desc[:100] + '…') if len(raw_desc) > 100 else (raw_desc or 'Pas de description')
+
+            is_favorited = row['id'] in st.session_state.favorites
+            heart_icon = "❤\uFE0E"
+            button_key = f"fav_{row['id']}"
+            heart_color = "#10B981" if is_favorited else "var(--text-gray)"
+            st.markdown(
+                f"<style>.st-key-fav_{row['id']} button p {{ color: {heart_color} !important; font-size: 1.6rem !important; }}</style>",
+                unsafe_allow_html=True
+            )
+
+            # Build price bar. Constructed as a single-line f-string (no triple
+            # quotes, no intermediate variable passed into another f-string) to
+            # avoid any whitespace/newline artefacts that can confuse Streamlit's
+            # markdown-to-HTML pipeline.
+            if price_m2_display:
+                price_block = f'<div class="card-price-container"><span>🏷️</span><span class="card-price">{price_display}</span><span class="card-price-m2">{price_m2_display}</span></div>'
+            else:
+                price_block = f'<div class="card-price-container"><span>🏷️</span><span class="card-price">{price_display}</span></div>'
+
+            with col:
+                card_html = f"""
+                <div class="card-wrapper">
+                    <a href="{row['url']}" target="_blank" class="card-link">
+                        <div class="card">
+                            <img src="{row['image_url']}" class="card-image" alt="Photo">
+                            <div class="card-meta">
+                                    <div class="card-logo-wrapper">{logo_svg_text}</div>
+                                    <div class="card-meta-text">{row['site']} · {row['scraped_date']}</div>
+                            </div>
+                            <div class="card-title">{title}</div>
+                            <div class="card-description">{description}</div>
+                            {price_block}
                         </div>
-                        <div class="card-title">{title}</div>
-                        <div class="card-description">{description}</div>
-                        {price_block}
-                    </div>
-                </a>
-            </div>
-            """
-            st.markdown(card_html, unsafe_allow_html=True)
-            
-            # Bouton favori
-            if st.button(heart_icon, key=button_key, help="is_fav" if is_favorited else "not_fav"):
-                if is_favorited:
-                    st.session_state.favorites.remove(row['id'])
-                else:
-                    st.session_state.favorites.add(row['id'])
-                st.rerun()
+                    </a>
+                </div>
+                """
+                st.markdown(card_html, unsafe_allow_html=True)
+
+                # Bouton favori
+                if st.button(heart_icon, key=button_key, help="is_fav" if is_favorited else "not_fav"):
+                    if is_favorited:
+                        st.session_state.favorites.remove(row['id'])
+                    else:
+                        st.session_state.favorites.add(row['id'])
+                    st.rerun()
+
+    # Nav bar (bottom)
+    st.markdown(f"""
+        <div class="page-nav page-nav-bottom">
+            <a href="{first_url}" class="nav-btn nav-btn-edge" {first_attr} target="_self">&#8676;</a>
+            <a href="{prev_url}" class="nav-btn" {prev_attr} target="_self">&#8592; Pr&#233;c&#233;dente</a>
+            <span class="nav-label">Page {current_page + 1} / {total_pages}</span>
+            <a href="{next_url}" class="nav-btn" {next_attr} target="_self">Suivante &#8594;</a>
+            <a href="{last_url}" class="nav-btn nav-btn-edge" {last_attr} target="_self">&#8677;</a>
+        </div>
+    """, unsafe_allow_html=True)
