@@ -512,6 +512,110 @@ with fab:
     if st.button("⚙\uFE0E", key="fab_open_filters"):
         filter_panel()
 
+    # Pull-to-refresh for standalone PWA (home screen icon).
+    # Injected into the parent frame via the same pattern as the scroll-to-top
+    # observer. Hidden by CSS in normal browser tabs -- only activates under
+    # @media (display-mode: standalone). The overscrollBehaviorY trick suppresses
+    # iOS rubber-band during the drag so the custom indicator controls the visual.
+    st.components.v1.html("""
+        <script>
+        (function() {
+            if (window.parent.__nantimmoPTR) return;
+            window.parent.__nantimmoPTR = true;
+
+            var doc = window.parent.document;
+
+            var spinner = doc.createElement('div');
+            spinner.id = 'ptr-spinner';
+            spinner.innerHTML = '&#8635;';
+            doc.body.appendChild(spinner);
+
+            var style = doc.createElement('style');
+            style.textContent = `
+                #ptr-spinner {
+                    position: fixed;
+                    top: -56px;
+                    left: 50%;
+                    transform: translateX(-50%);
+                    width: 40px;
+                    height: 40px;
+                    border-radius: 50%;
+                    background: #10B981;
+                    color: white;
+                    font-size: 22px;
+                    display: none;
+                    align-items: center;
+                    justify-content: center;
+                    box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+                    transition: top 0.15s ease;
+                    z-index: 99999;
+                    pointer-events: none;
+                }
+                @media all and (display-mode: standalone) {
+                    #ptr-spinner { display: flex; }
+                }
+                #ptr-spinner.ptr-spinning {
+                    animation: ptr-spin 0.6s linear infinite;
+                }
+                @keyframes ptr-spin {
+                    from { transform: translateX(-50%) rotate(0deg); }
+                    to   { transform: translateX(-50%) rotate(360deg); }
+                }
+            `;
+            doc.head.appendChild(style);
+
+            var startY = 0;
+            var THRESHOLD = 72;
+            var INDICATOR_MAX = 52;
+            var pulling = false;
+            var triggered = false;
+
+            function getScrollEl() {
+                return doc.querySelector('[data-testid="stMain"]');
+            }
+
+            doc.addEventListener('touchstart', function(e) {
+                var el = getScrollEl();
+                if (!el || el.scrollTop > 0) return;
+                startY = e.touches[0].clientY;
+                pulling = true;
+                triggered = false;
+            }, { passive: true });
+
+            doc.addEventListener('touchmove', function(e) {
+                if (!pulling) return;
+                var el = getScrollEl();
+                if (!el || el.scrollTop > 0) { pulling = false; return; }
+                var dy = e.touches[0].clientY - startY;
+                if (dy <= 0) return;
+                el.style.overscrollBehaviorY = 'contain';
+                var travel = Math.min(dy * 0.5, INDICATOR_MAX);
+                spinner.style.top = (travel - 56) + 'px';
+                if (dy >= THRESHOLD && !triggered) {
+                    triggered = true;
+                    spinner.classList.add('ptr-spinning');
+                }
+            }, { passive: true });
+
+            doc.addEventListener('touchend', function() {
+                if (!pulling) return;
+                pulling = false;
+                if (triggered) {
+                    spinner.style.top = '8px';
+                    setTimeout(function() {
+                        window.parent.location.reload();
+                    }, 200);
+                } else {
+                    spinner.style.top = '-56px';
+                    spinner.classList.remove('ptr-spinning');
+                }
+                var el = getScrollEl();
+                if (el) el.style.overscrollBehaviorY = '';
+            }, { passive: true });
+        })();
+        </script>
+    """, height=0)
+
 # =============================================================
 # RESOLVE APPLIED FILTER VALUES
 # (reads from session state written by the dialog's Apply button)
