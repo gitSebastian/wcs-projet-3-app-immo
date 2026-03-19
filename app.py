@@ -525,6 +525,7 @@ with fab:
 
             var doc = window.parent.document;
 
+            // Spinner element -- always in DOM, visibility driven by opacity + translateY
             var spinner = doc.createElement('div');
             spinner.id = 'ptr-spinner';
             spinner.innerHTML = '&#8635;';
@@ -534,9 +535,8 @@ with fab:
             style.textContent = `
                 #ptr-spinner {
                     position: fixed;
-                    top: -56px;
+                    top: 12px;
                     left: 50%;
-                    transform: translateX(-50%);
                     width: 40px;
                     height: 40px;
                     border-radius: 50%;
@@ -546,27 +546,33 @@ with fab:
                     display: none;
                     align-items: center;
                     justify-content: center;
-                    box-shadow: 0 2px 8px rgba(0,0,0,0.25);
-                    transition: top 0.15s ease;
+                    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
                     z-index: 99999;
                     pointer-events: none;
+                    opacity: 0;
+                    transform: translateX(-50%) translateY(-56px);
+                    /* No transition here -- we drive position on every touchmove tick */
                 }
                 @media all and (display-mode: standalone) {
                     #ptr-spinner { display: flex; }
                 }
-                #ptr-spinner.ptr-spinning {
-                    animation: ptr-spin 0.6s linear infinite;
+                #ptr-spinner.ptr-committed {
+                    /* Snap to resting position and spin while reload fires */
+                    opacity: 1 !important;
+                    transform: translateX(-50%) translateY(0px) !important;
+                    transition: transform 0.15s ease, opacity 0.15s ease;
+                    animation: ptr-spin 0.5s linear infinite;
                 }
                 @keyframes ptr-spin {
-                    from { transform: translateX(-50%) rotate(0deg); }
-                    to   { transform: translateX(-50%) rotate(360deg); }
+                    from { transform: translateX(-50%) translateY(0px) rotate(0deg); }
+                    to   { transform: translateX(-50%) translateY(0px) rotate(360deg); }
                 }
             `;
             doc.head.appendChild(style);
 
             var startY = 0;
-            var THRESHOLD = 72;
-            var INDICATOR_MAX = 52;
+            var THRESHOLD = 72;      // drag distance before commit (px)
+            var MAX_DRAG = 80;       // caps visual travel
             var pulling = false;
             var triggered = false;
 
@@ -580,37 +586,60 @@ with fab:
                 startY = e.touches[0].clientY;
                 pulling = true;
                 triggered = false;
+                // Remove committed class from any previous cycle
+                spinner.classList.remove('ptr-committed');
             }, { passive: true });
 
             doc.addEventListener('touchmove', function(e) {
                 if (!pulling) return;
                 var el = getScrollEl();
                 if (!el || el.scrollTop > 0) { pulling = false; return; }
+
                 var dy = e.touches[0].clientY - startY;
-                if (dy <= 0) return;
+                if (dy <= 0) {
+                    spinner.style.opacity = '0';
+                    spinner.style.transform = 'translateX(-50%) translateY(-56px)';
+                    return;
+                }
+
+                // Suppress iOS native rubber-band so our indicator owns the visual
                 el.style.overscrollBehaviorY = 'contain';
-                var travel = Math.min(dy * 0.5, INDICATOR_MAX);
-                spinner.style.top = (travel - 56) + 'px';
+
+                // Resistance curve: feels like pulling against a spring
+                var travel = Math.min(dy * 0.55, MAX_DRAG);
+                var progress = Math.min(travel / MAX_DRAG, 1);
+
+                // Fade in and slide down proportionally to drag distance
+                spinner.style.opacity = String(progress);
+                spinner.style.transform = 'translateX(-50%) translateY(' + (travel - 56) + 'px)';
+
                 if (dy >= THRESHOLD && !triggered) {
                     triggered = true;
-                    spinner.classList.add('ptr-spinning');
                 }
             }, { passive: true });
 
             doc.addEventListener('touchend', function() {
                 if (!pulling) return;
                 pulling = false;
-                if (triggered) {
-                    spinner.style.top = '8px';
-                    setTimeout(function() {
-                        window.parent.location.reload();
-                    }, 200);
-                } else {
-                    spinner.style.top = '-56px';
-                    spinner.classList.remove('ptr-spinning');
-                }
+
                 var el = getScrollEl();
                 if (el) el.style.overscrollBehaviorY = '';
+
+                if (triggered) {
+                    // Snap spinner to final position and keep it visible during reload
+                    spinner.classList.add('ptr-committed');
+                    spinner.style.opacity = '';
+                    spinner.style.transform = '';
+                    setTimeout(function() {
+                        window.parent.location.reload();
+                    }, 350);
+                } else {
+                    // Fade out and slide back up
+                    spinner.style.transition = 'transform 0.2s ease, opacity 0.2s ease';
+                    spinner.style.opacity = '0';
+                    spinner.style.transform = 'translateX(-50%) translateY(-56px)';
+                    setTimeout(function() { spinner.style.transition = ''; }, 220);
+                }
             }, { passive: true });
         })();
         </script>
