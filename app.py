@@ -270,9 +270,50 @@ st.markdown(f"""
 
 float_init()  # required once at app startup
 
+# ── Compute whether any filter is currently active (used to show Reset button) ──
+# Evaluated once per main-body render, captured by the filter_panel closure.
+# "Active" means any applied value differs from the all-data default.
+_all_sites = sorted(df['site'].unique())
+_applied_sites = st.session_state.get('applied_selected_sites') or _all_sites
+_date_min_data = df['scraped_date_dt'].min()
+_date_max_data = df['scraped_date_dt'].max()
+_applied_date_min = st.session_state.get('applied_date_min')
+_applied_date_max = st.session_state.get('applied_date_max')
+_filters_are_active = any([
+    bool(st.session_state.get('applied_search', '')),
+    st.session_state.get('applied_show_favorites', False),
+    bool(st.session_state.get('applied_price_min', '')),
+    bool(st.session_state.get('applied_price_max', '')),
+    st.session_state.get('applied_m2_min') is not None,
+    st.session_state.get('applied_m2_max') is not None,
+    st.session_state.get('applied_sort_label', 'Date (récent → ancien)') != 'Date (récent → ancien)',
+    set(_applied_sites) != set(_all_sites),
+    _applied_date_min is not None and date.fromisoformat(_applied_date_min) > _date_min_data,
+    _applied_date_max is not None and date.fromisoformat(_applied_date_max) < _date_max_data,
+])
+
 # ── Filter dialog ──────────────────────────────────────────────
 @st.dialog("⚙️ Filtres", width="large")
 def filter_panel():
+    # Reset all filters — only shown when something is active. Top of dialog
+    # so it's the first thing seen when opening with filters applied.
+    if _filters_are_active and st.button("🔄 Réinitialiser les filtres", use_container_width=True, key="fab_reset_filters"):
+        keys_to_clear = [
+            'applied_search', 'applied_show_favorites',
+            'applied_price_min', 'applied_price_max',
+            'applied_m2_min', 'applied_m2_max',
+            'applied_sort_label', 'applied_selected_sites',
+            'applied_date_min', 'applied_date_max',
+            'current_page', 'sites_multiselect',
+        ]
+        for k in keys_to_clear:
+            if k in st.session_state:
+                del st.session_state[k]
+        st.query_params.clear()
+        st.rerun()
+
+    st.divider()
+
     search_term = st.text_input(
         "🔎 Chercher par mot-clé",
         value=st.session_state.applied_search,
@@ -372,25 +413,35 @@ def filter_panel():
     # ------------------------------------------------------------------
     # Filtre Sources
     # ------------------------------------------------------------------
-    st.markdown("### 🏢 Sources")
-    with st.expander('Sources', expanded=False):
-        available_sites = sorted(df['site'].unique())
-        
-        # Determine default sites: use session state if set, otherwise URL params
-        if st.session_state.applied_selected_sites is not None:
-            default_sites = st.session_state.applied_selected_sites
-        else:
-            default_sites = get_url_param_list('sites', available_sites)
-        
-        selected_sites = []
-        for site in available_sites:
-            is_selected = st.checkbox(
-                site, 
-                value=(site in default_sites), 
-                key=f"site_{site}"
-            )
-            if is_selected:
-                selected_sites.append(site)
+    available_sites = sorted(df['site'].unique())
+
+    # Determine default sites: use session state if set, otherwise URL params
+    if st.session_state.applied_selected_sites is not None:
+        default_sites = st.session_state.applied_selected_sites
+    else:
+        default_sites = get_url_param_list('sites', available_sites)
+
+    st.markdown("🏢 **Sources**")
+    col_all, col_none = st.columns(2)
+    with col_all:
+        if st.button("✓ Tout", use_container_width=True, key="sites_select_all"):
+            st.session_state['sites_multiselect'] = available_sites
+    with col_none:
+        if st.button("× Aucun", use_container_width=True, key="sites_select_none"):
+            st.session_state['sites_multiselect'] = []
+
+    # Seed the widget key on first render so it reflects default_sites.
+    # After that the widget owns its own state — only the buttons above
+    # (or a Reset) should overwrite it externally.
+    if 'sites_multiselect' not in st.session_state:
+        st.session_state['sites_multiselect'] = default_sites
+
+    selected_sites = st.multiselect(
+        "Sources actives",
+        options=available_sites,
+        key='sites_multiselect',
+        label_visibility='collapsed',
+    )
 
     st.divider()
 

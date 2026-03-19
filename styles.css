@@ -213,11 +213,13 @@
     width: 100% !important;
 }
 
-[data-testid="stColumn"] {
+/* Heart (fav) button — absolute-positioned inside card column.
+   Scoped to .st-key-fav_* so it never bleeds into other column buttons. */
+[class*="st-key-fav_"] {
     position: relative;
 }
 
-[data-testid="stColumn"] [data-testid="stBaseButton-secondary"] {
+[class*="st-key-fav_"] [data-testid="stBaseButton-secondary"] {
     position: absolute;
     top: -72px;
     right: 18px;
@@ -229,6 +231,8 @@
     font-size: 20px !important;
     padding: 14px 16px !important;
 }
+
+
 
 /* =============================================================
    PAGINATION NAV
@@ -343,4 +347,36 @@ div[data-testid="stDialog"] div[role="dialog"] {
     border-radius: 0 !important;
     margin: 0 !important;
     box-shadow: none !important;
+}
+
+/* Tout / Aucun source buttons — placed after the blanket zero-radius rule so
+   cascade order ensures these win. Extra [data-testid] adds specificity too.
+   nowrap + min-width:0 overrides Streamlit's mobile breakpoint which sets
+   min-width:calc(100%-24px) per column, forcing each to full width and wrapping. */
+div[data-testid="stDialog"] .stHorizontalBlock:has(.st-key-sites_select_all) {
+    flex-wrap: nowrap !important;
+}
+
+div[data-testid="stDialog"] .stHorizontalBlock:has(.st-key-sites_select_all) [data-testid="stColumn"] {
+    min-width: 0 !important;
+}
+
+div[data-testid="stDialog"] .st-key-sites_select_all button,
+div[data-testid="stDialog"] .st-key-sites_select_none button {
+    color: var(--text-white) !important;
+    font-family: var(--font-body) !important;
+    font-size: 14px !important;
+    border: 1px solid #444 !important;
+    border-radius: var(--radius-small) !important;
+    background: transparent !important;
+    padding: 0.4rem 1rem !important;
+    height: auto !important;
+    width: 100% !important;
+    transition: background 0.15s ease !important;
+}
+
+div[data-testid="stDialog"] .st-key-sites_select_all button:hover,
+div[data-testid="stDialog"] .st-key-sites_select_none button:hover {
+    background: #333 !important;
+    border-color: #444 !important;
 }
