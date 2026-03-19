@@ -441,6 +441,7 @@ def filter_panel():
         options=available_sites,
         key='sites_multiselect',
         label_visibility='collapsed',
+        placeholder="Choisir les agences",
     )
 
     st.divider()
@@ -715,9 +716,9 @@ else:
     st.markdown(f"""
         <div class="page-nav">
             <a href="{first_url}" class="nav-btn nav-btn-edge" {first_attr} target="_self">&#8676;</a>
-            <a href="{prev_url}" class="nav-btn" {prev_attr} target="_self">&#8592; Pr&#233;c&#233;dente</a>
-            <span class="nav-label">Page {current_page + 1} / {total_pages}</span>
-            <a href="{next_url}" class="nav-btn" {next_attr} target="_self">Suivante &#8594;</a>
+            <a href="{prev_url}" class="nav-btn" {prev_attr} target="_self">&#8592; Pr&#233;c.</a>
+            <span class="nav-label">{current_page + 1} / {total_pages}</span>
+            <a href="{next_url}" class="nav-btn" {next_attr} target="_self">Suiv. &#8594;</a>
             <a href="{last_url}" class="nav-btn nav-btn-edge" {last_attr} target="_self">&#8677;</a>
         </div>
     """, unsafe_allow_html=True)
@@ -822,9 +823,9 @@ else:
     st.markdown(f"""
         <div class="page-nav page-nav-bottom">
             <a href="{first_url}" class="nav-btn nav-btn-edge" {first_attr} target="_self">&#8676;</a>
-            <a href="{prev_url}" class="nav-btn" {prev_attr} target="_self">&#8592; Pr&#233;c&#233;dente</a>
-            <span class="nav-label">Page {current_page + 1} / {total_pages}</span>
-            <a href="{next_url}" class="nav-btn" {next_attr} target="_self">Suivante &#8594;</a>
+            <a href="{prev_url}" class="nav-btn" {prev_attr} target="_self">&#8592; Pr&#233;c.</a>
+            <span class="nav-label">{current_page + 1} / {total_pages}</span>
+            <a href="{next_url}" class="nav-btn" {next_attr} target="_self">Suiv. &#8594;</a>
             <a href="{last_url}" class="nav-btn nav-btn-edge" {last_attr} target="_self">&#8677;</a>
         </div>
     """, unsafe_allow_html=True)
