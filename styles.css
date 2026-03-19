@@ -295,7 +295,7 @@
     margin-bottom: 1.5rem;
 }
 
-div[data-testid="stVerticalBlock"] div:has(div.fab-anchor) {
+.st-key-fab_open_filters {
     position: fixed;
     bottom: 5rem;
     right: 0rem;
