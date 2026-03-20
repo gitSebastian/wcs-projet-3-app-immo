@@ -981,17 +981,21 @@ else:
                         st.session_state.favorites.add(row['id'])
                     st.rerun()
 
-    # Heart button DOM transplant -- runs once per page render.
-    # Moves each fav button physically into its .card-price-container so that
-    # position:absolute is anchored to the price bar itself, not to some
-    # distant Streamlit ancestor. This is invariant to Streamlit version,
-    # column padding, and scroll position.
+    # Heart button positioning -- runs once per page render.
+    # The button lives outside the <a> tag in the Streamlit DOM (correct, so
+    # clicks are not swallowed by the card link). The problem is that
+    # position:absolute on the button escapes to a distant ancestor because
+    # every intermediate Streamlit div is position:static.
+    # Fix: set position:relative on the stColumn itself, then anchor the
+    # button with bottom + right calculated from the column bottom edge.
+    # bottom = price bar height + card bottom padding (both fixed values).
+    # This is environment-invariant: it doesn't depend on content height above.
     st.components.v1.html("""
         <script>
         (function() {
             if (window.parent.__nantimmoHeartFixed) return;
             window.parent.__nantimmoHeartFixed = true;
-            function transplantHearts() {
+            function positionHearts() {
                 var doc = window.parent.document;
                 var cols = doc.querySelectorAll('[data-testid="stColumn"]');
                 var moved = 0;
@@ -1001,26 +1005,24 @@ else:
                     if (!favWrapper || !price) return;
                     var btn = favWrapper.querySelector('[data-testid="stBaseButton-secondary"]');
                     if (!btn) return;
-                    // Make price bar the positioning context
-                    price.style.position = 'relative';
-                    // Move btn physically into the price bar
-                    price.appendChild(btn);
+                    // Make the stColumn the positioning context
+                    col.style.position = 'relative';
+                    // Measure how far the price bar sits from the column bottom
+                    var colRect = col.getBoundingClientRect();
+                    var priceRect = price.getBoundingClientRect();
+                    var bottomOffset = colRect.bottom - priceRect.bottom;
+                    var rightOffset = colRect.right - priceRect.right;
                     btn.style.setProperty('position', 'absolute', 'important');
-                    btn.style.setProperty('top', '0', 'important');
-                    btn.style.setProperty('right', '0', 'important');
-                    btn.style.setProperty('bottom', '0', 'important');
+                    btn.style.setProperty('bottom', bottomOffset + 'px', 'important');
+                    btn.style.setProperty('right', rightOffset + 'px', 'important');
+                    btn.style.setProperty('top', 'auto', 'important');
                     btn.style.setProperty('width', 'auto', 'important');
                     btn.style.setProperty('margin', '0', 'important');
-                    // Hide the now-empty wrapper -- the stTooltipHoverTarget
-                    // ancestor chain stays in the DOM after appendChild and
-                    // renders a ghost heart emoji without the button.
-                    favWrapper.style.setProperty('display', 'none', 'important');
                     moved++;
                 });
-                // Retry if columns not yet rendered
-                if (moved === 0) { setTimeout(transplantHearts, 100); }
+                if (moved === 0) { setTimeout(positionHearts, 100); }
             }
-            setTimeout(transplantHearts, 200);
+            setTimeout(positionHearts, 200);
         })();
         </script>
     """, height=0)
