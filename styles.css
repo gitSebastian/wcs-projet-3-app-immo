@@ -221,7 +221,7 @@
 
 [class*="st-key-fav_"] [data-testid="stBaseButton-secondary"] {
     position: absolute;
-    top: -72px;
+    top: 0;
     right: 18px;
     z-index: 1000 !important;
     width: auto !important;

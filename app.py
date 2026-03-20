@@ -981,6 +981,41 @@ else:
                         st.session_state.favorites.add(row['id'])
                     st.rerun()
 
+    # Heart button JS repositioning -- runs once per page render.
+    # Reads the real position of each .card-price-container and aligns its
+    # sibling fav button to match, making the layout invariant to Streamlit
+    # version differences in column padding between local and Cloud.
+    st.components.v1.html("""
+        <script>
+        (function() {
+            if (window.parent.__nantimmoHeartFixed) return;
+            window.parent.__nantimmoHeartFixed = true;
+            function positionHearts() {
+                var doc = window.parent.document;
+                var favWrappers = doc.querySelectorAll('[class*="st-key-fav_"]');
+                var moved = 0;
+                favWrappers.forEach(function(wrapper) {
+                    var col = wrapper.closest('[data-testid="stColumn"]') || wrapper.closest('.stColumn');
+                    if (!col) return;
+                    var price = col.querySelector('.card-price-container');
+                    if (!price) return;
+                    var btn = wrapper.querySelector('[data-testid="stBaseButton-secondary"]');
+                    if (!btn) return;
+                    var wrapperRect = wrapper.getBoundingClientRect();
+                    var priceRect = price.getBoundingClientRect();
+                    // Offset = how far up (negative) from wrapper.bottom to price.top
+                    var offset = priceRect.top - wrapperRect.bottom;
+                    btn.style.setProperty('top', offset + 'px', 'important');
+                    moved++;
+                });
+                // Retry if no buttons found yet (DOM still rendering)
+                if (moved === 0) { setTimeout(positionHearts, 100); }
+            }
+            setTimeout(positionHearts, 200);
+        })();
+        </script>
+    """, height=0)
+
     # Nav bar (bottom)
     st.markdown(f"""
         <div class="page-nav page-nav-bottom">
