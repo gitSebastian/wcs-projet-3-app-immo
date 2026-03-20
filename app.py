@@ -603,7 +603,12 @@ with fab:
                 return doc.querySelector('[data-testid="stMain"]');
             }
 
+            function isDialogOpen() {
+                return !!doc.querySelector('[data-testid="stDialog"]');
+            }
+
             doc.addEventListener('touchstart', function(e) {
+                if (isDialogOpen()) return;
                 var el = getScrollEl();
                 if (!el || el.scrollTop > 0) return;
                 startY = e.touches[0].clientY;
@@ -615,6 +620,7 @@ with fab:
 
             doc.addEventListener('touchmove', function(e) {
                 if (!pulling) return;
+                if (isDialogOpen()) { pulling = false; return; }
                 var el = getScrollEl();
                 if (!el || el.scrollTop > 0) { pulling = false; return; }
 
