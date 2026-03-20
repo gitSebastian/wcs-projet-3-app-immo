@@ -239,7 +239,7 @@
 
 [class*="st-key-fav_"] [data-testid="stBaseButton-secondary"] {
     position: absolute !important;
-    bottom: 36px !important;
+    bottom: 21px !important;
     right: 20px !important;
     top: auto !important;
     z-index: 1000 !important;
