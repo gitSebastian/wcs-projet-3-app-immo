@@ -512,6 +512,29 @@ with fab:
     if st.button("⚙\uFE0E", key="fab_open_filters"):
         filter_panel()
 
+    # Fix FAB position directly via JS -- CSS right:0 is unreliable in Safari
+    # when the element's static flow position is on the left. Inline style wins
+    # over any stylesheet rule in all browsers.
+    st.components.v1.html("""
+        <script>
+        (function() {
+            if (window.parent.__nantimmoFABFixed) return;
+            var fix = function() {
+                var fab = window.parent.document.querySelector('.st-key-fab_open_filters');
+                if (!fab) { setTimeout(fix, 50); return; }
+                fab.style.setProperty('position', 'fixed', 'important');
+                fab.style.setProperty('bottom', '5rem', 'important');
+                fab.style.setProperty('right', '0', 'important');
+                fab.style.setProperty('left', 'auto', 'important');
+                fab.style.setProperty('width', '3.5rem', 'important');
+                fab.style.setProperty('z-index', '9999', 'important');
+                window.parent.__nantimmoFABFixed = true;
+            };
+            fix();
+        })();
+        </script>
+    """, height=0)
+
     # Pull-to-refresh for standalone PWA (home screen icon).
     # Injected into the parent frame via the same pattern as the scroll-to-top
     # observer. Hidden by CSS in normal browser tabs -- only activates under

@@ -295,13 +295,7 @@
     margin-bottom: 1.5rem;
 }
 
-.st-key-fab_open_filters {
-    position: fixed !important;
-    bottom: 5rem !important;
-    right: 0 !important;
-    width: 3.5rem !important;
-    z-index: 9999 !important;
-}
+/* FAB wrapper positioning handled by JS injection (Safari CSS compat) */
 /* FAB button — round */
 .st-key-fab_open_filters button {
     border-radius: 8px 0 0 8px !important;
