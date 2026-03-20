@@ -701,29 +701,41 @@ with fab:
     #     prevents the location.replace restore from firing more than once.
     #   No guard on the sync write -- runs every rerun so heart taps update
     #     localStorage immediately without waiting for the next full page load.
-    st.components.v1.html("""
+    # Pass favorites value directly from Python so JS never reads the URL.
+    # Reading window.top.location.search from JS is unreliable: the component
+    # renders before st.query_params.update() at the bottom of the script has
+    # executed, so the URL still shows the previous render's stale value.
+    # Python already knows the exact string -- embed it as a literal.
+    _fav_str = ",".join(str(x) for x in st.session_state.favorites)
+    st.components.v1.html(f"""
         <script>
-        (function() {
+        (function() {{
             var LS_KEY = 'nantimmo_favorites';
             var top = window.top;
-            var params = new URLSearchParams(top.location.search);
-            var urlFavs = params.get('favorites') || '';
+            // Value injected directly by Python -- always current, never stale.
+            var currentFavs = {repr(_fav_str)};
 
             // Restore path: one-shot per page lifecycle.
-            if (!top.__nantimmoFavRestored) {
+            // Runs on cold PWA launch when URL has no favorites param.
+            // Uses window.top so localStorage access is against the real app
+            // origin, not the null-origin srcdoc iframe.
+            if (!top.__nantimmoFavRestored) {{
                 top.__nantimmoFavRestored = true;
                 var storedFavs = '';
-                try { storedFavs = top.localStorage.getItem(LS_KEY) || ''; } catch(e) {}
-                if (!urlFavs && storedFavs) {
+                try {{ storedFavs = top.localStorage.getItem(LS_KEY) || ''; }} catch(e) {{}}
+                var urlFavs = new URLSearchParams(top.location.search).get('favorites') || '';
+                if (!urlFavs && storedFavs) {{
+                    var params = new URLSearchParams(top.location.search);
                     params.set('favorites', storedFavs);
                     top.location.replace(top.location.pathname + '?' + params.toString());
                     return;
-                }
-            }
+                }}
+            }}
 
-            // Sync path: write current favorites to localStorage on every rerun.
-            try { top.localStorage.setItem(LS_KEY, urlFavs); } catch(e) {}
-        })();
+            // Sync path: write Python's authoritative value to localStorage.
+            // Runs on every rerun so heart taps update storage immediately.
+            try {{ top.localStorage.setItem(LS_KEY, currentFavs); }} catch(e) {{}}
+        }})();
         </script>
     """, height=0)
 
