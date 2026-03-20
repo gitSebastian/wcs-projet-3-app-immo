@@ -604,7 +604,7 @@ with fab:
             }
 
             function isDialogOpen() {
-                return !!doc.querySelector('[data-testid="stDialog"]');
+                return !!doc.querySelector('[data-baseweb="modal"]');
             }
 
             doc.addEventListener('touchstart', function(e) {
