@@ -852,12 +852,10 @@ if len(filtered_df) == 0:
         st.info("Aucune annonce avec ces filtres")
 else:
     # Pagination
-    total_listings = len(filtered_df)
-    total_pages    = max(1, -(-total_listings // PAGE_SIZE))  # ceiling division
-    current_page   = min(st.session_state.current_page, total_pages - 1)  # clamp after filter
-    start          = current_page * PAGE_SIZE
-    end            = start + PAGE_SIZE
-    page_df        = filtered_df.iloc[start:end]
+    unique_dates = sorted(filtered_df['scraped_date_dt'].unique(), reverse=True)
+    total_pages  = max(1, len(unique_dates))
+    current_page = min(st.session_state.current_page, total_pages - 1)  # clamp after filter
+    page_df      = filtered_df[filtered_df['scraped_date_dt'] == unique_dates[current_page]] if unique_dates else filtered_df.iloc[0:0]
 
     # Nav bar — pure HTML links, no st.columns needed
     def _nav_url(p):
