@@ -683,58 +683,46 @@ with fab:
     # restores it to the base URL with no query params, wiping URL-stored
     # favorites. localStorage survives PWA close/reopen on all platforms.
     #
-    # Critical implementation note: st.components.v1.html renders inside a
-    # sandboxed iframe on a different origin (Streamlit CDN). iOS Safari ITP
-    # blocks localStorage access in cross-origin iframes, so bare localStorage
-    # calls here hit the iframe's ephemeral storage and never persist.
-    # Fix: inject a <script> tag into window.parent.document so the code runs
-    # in the parent frame's context against the app's own origin -- exactly
-    # the same pattern used by the scroll-to-top observer below.
+    # Frame topology on Streamlit Cloud (confirmed by inspection):
+    #   window.top  = nant-immo.streamlit.app  (outer shell, real URL + real LS)
+    #   window.parent = nant-immo.streamlit.app/~/+/  (Streamlit app iframe)
+    #   window (this script) = st.components srcdoc iframe
     #
-    # The injected script runs once per PWA launch (guarded by __nantimmoFavLS):
-    #   On load -- if ?favorites= is absent/empty but localStorage has data,
-    #   restore via location.replace() so Streamlit re-inits with favorites.
-    #   On every render -- sync current ?favorites= back to localStorage.
-    #   Priority rule -- URL always wins. Only restore when param is absent.
+    # All three are same-origin so window.top is accessible.
+    # window.top.localStorage is the correct storage bucket.
+    # window.top.location.search has the real query params including ?favorites=.
+    #
+    # DO NOT inject script tags into window.parent.document -- Streamlit's /~/+/
+    # frame has a strict CSP that blocks dynamically injected inline scripts.
+    # Run everything directly here using window.top references instead.
+    #
+    # Two separate guards:
+    #   window.top.__nantimmoFavRestored -- one-shot on the outer window,
+    #     prevents the location.replace restore from firing more than once.
+    #   No guard on the sync write -- runs every rerun so heart taps update
+    #     localStorage immediately without waiting for the next full page load.
     st.components.v1.html("""
         <script>
         (function() {
-            // Inject a script into the parent frame (the real app origin) so
-            // localStorage calls run against the app's origin, not the null-origin
-            // srcdoc iframe where iOS Safari ITP blocks storage access entirely.
-            //
-            // Two separate guards:
-            //   __nantimmoFavRestored -- one-shot, prevents the restore redirect
-            //     from firing more than once per page lifecycle.
-            //   No guard on the sync write -- it must run on every Streamlit
-            //     rerun so adding/removing a favorite updates localStorage
-            //     immediately, not just on the next full page load.
+            var LS_KEY = 'nantimmo_favorites';
+            var top = window.top;
+            var params = new URLSearchParams(top.location.search);
+            var urlFavs = params.get('favorites') || '';
 
-            var s = window.parent.document.createElement('script');
-            s.textContent = `
-                (function() {
-                    var LS_KEY = 'nantimmo_favorites';
-                    var params = new URLSearchParams(window.location.search);
-                    var urlFavs = params.get('favorites') || '';
+            // Restore path: one-shot per page lifecycle.
+            if (!top.__nantimmoFavRestored) {
+                top.__nantimmoFavRestored = true;
+                var storedFavs = '';
+                try { storedFavs = top.localStorage.getItem(LS_KEY) || ''; } catch(e) {}
+                if (!urlFavs && storedFavs) {
+                    params.set('favorites', storedFavs);
+                    top.location.replace(top.location.pathname + '?' + params.toString());
+                    return;
+                }
+            }
 
-                    // Restore path: only runs once per page load.
-                    if (!window.__nantimmoFavRestored) {
-                        window.__nantimmoFavRestored = true;
-                        var storedFavs = '';
-                        try { storedFavs = localStorage.getItem(LS_KEY) || ''; } catch(e) {}
-                        if (!urlFavs && storedFavs) {
-                            params.set('favorites', storedFavs);
-                            window.location.replace(window.location.pathname + '?' + params.toString());
-                            return;
-                        }
-                    }
-
-                    // Sync path: runs on every rerun so localStorage always
-                    // reflects the latest favorite state after heart taps.
-                    try { localStorage.setItem(LS_KEY, urlFavs); } catch(e) {}
-                })();
-            `;
-            window.parent.document.head.appendChild(s);
+            // Sync path: write current favorites to localStorage on every rerun.
+            try { top.localStorage.setItem(LS_KEY, urlFavs); } catch(e) {}
         })();
         </script>
     """, height=0)
