@@ -225,6 +225,18 @@
     display: block !important;
 }
 
+/* Zero out the layout footprint of the fav button container.
+   The button is position:absolute so it doesn't need flow space.
+   Without this, Streamlit gives the stElementContainer minimum height
+   that creates a visible gap after every card row. */
+[class*="st-key-fav_"] {
+    height: 0 !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+}
+
 [class*="st-key-fav_"] [data-testid="stBaseButton-secondary"] {
     position: absolute !important;
     bottom: 36px !important;
