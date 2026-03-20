@@ -732,10 +732,6 @@ selected_date_max = min(selected_date_max, date_max_data)
 # MISE À JOUR URL
 # =============================================================
 
-# noscroll is consumed here and not written back -- it's a one-shot signal
-# to the scroll observer to restore position instead of scrolling to top.
-_noscroll = st.query_params.get('noscroll', '') == '1'
-
 st.query_params.update({
     "sites":       ",".join(selected_sites),
     "known_sites": ",".join(available_sites),
@@ -889,58 +885,27 @@ else:
         </div>
     """, unsafe_allow_html=True)
 
-    # Scroll behaviour on rerun:
-    # - Normal navigation (page change, filter apply): scroll to top.
-    # - Heart click: restore saved scroll position.
-    #
-    # Mechanism: the heart link saves scrollTop to sessionStorage before
-    # navigating and adds noscroll=1 to the URL. Python reads and strips
-    # noscroll, then passes _noscroll=True into this snippet each render.
-    # The snippet writes window.parent.__nantimmoRestore on every render
-    # (not guarded), so the observer always sees the current value.
-    st.components.v1.html(f"""
+    # Scroll-to-top on page/filter navigation. Not fired on st.button reruns
+    # because those don't cause DOM mutations in stMain -- Streamlit does a
+    # reconciled in-place update, so the observer debounce never commits.
+    st.components.v1.html("""
         <script>
-        (function() {{
-            var par = window.parent;
-            var doc = par.document;
-
-            // Always update the restore flag for this render
-            par.__nantimmoRestore = {'true' if _noscroll else 'false'};
-
-            // Register heart-click saver once
-            if (!par.__nantimmoHeartSave) {{
-                par.__nantimmoHeartSave = true;
-                doc.addEventListener('click', function(e) {{
-                    if (!e.target.closest('.heart-btn')) return;
-                    var el = doc.querySelector('[data-testid="stMain"]');
-                    if (el) sessionStorage.setItem('nantimmo_scroll', el.scrollTop);
-                }}, true);
-            }}
-
-            // Install MutationObserver once; it reads __nantimmoRestore each fire
-            if (!par.__nantimmoObs) {{
-                par.__nantimmoObs = true;
-                var el = doc.querySelector('[data-testid="stMain"]');
-                if (el) {{
+        if (!window.parent.__nantimmoObs) {
+            var s = window.parent.document.createElement('script');
+            s.textContent = `
+                var el = document.querySelector('[data-testid=stMain]');
+                if (el && !window.__nantimmoObs) {
                     var t = null;
-                    new MutationObserver(function() {{
+                    window.__nantimmoObs = new MutationObserver(function() {
                         clearTimeout(t);
-                        t = setTimeout(function() {{
-                            if (par.__nantimmoRestore) {{
-                                var saved = sessionStorage.getItem('nantimmo_scroll');
-                                if (saved !== null) {{
-                                    el.scrollTop = parseInt(saved);
-                                    sessionStorage.removeItem('nantimmo_scroll');
-                                }}
-                                par.__nantimmoRestore = false;
-                            }} else {{
-                                el.scrollTop = 0;
-                            }}
-                        }}, 150);
-                    }}).observe(el, {{ childList: true, subtree: true }});
-                }}
-            }}
-        }})();
+                        t = setTimeout(function() { el.scrollTop = 0; }, 150);
+                    });
+                    window.__nantimmoObs.observe(el, { childList: true, subtree: true });
+                }
+            `;
+            window.parent.document.head.appendChild(s);
+            window.parent.__nantimmoObs = true;
+        }
         </script>
     """, height=0)
 
@@ -970,26 +935,17 @@ else:
 
             is_favorited = row['id'] in st.session_state.favorites
             heart_color = "#10B981" if is_favorited else "var(--text-gray)"
-
-            # Toggle URL: add or remove this listing id from the favorites param.
-            # Same mechanism as pagination -- pure HTML link, no React involved.
-            current_favs = set(st.session_state.favorites)
-            toggled_favs = current_favs - {row['id']} if is_favorited else current_favs | {row['id']}
-            fav_params = dict(st.query_params)
-            fav_params['favorites'] = ','.join(str(x) for x in toggled_favs)
-            fav_params['noscroll'] = '1'  # tells the scroll observer to restore position
-            fav_url = '?' + '&'.join(f'{k}={v}' for k, v in fav_params.items())
-
-            heart_link = (
-                f'<a href="{fav_url}" target="_self" class="heart-btn" '
-                f'style="color:{heart_color}" aria-label="Favori">&#10084;&#65038;</a>'
+            button_key = f"fav_{row['id']}"
+            st.markdown(
+                f"<style>.st-key-fav_{row['id']} button p {{ color: {heart_color} !important; font-size: 1.6rem !important; }}</style>",
+                unsafe_allow_html=True
             )
 
             # Build price bar.
             if price_m2_display:
-                price_block = f'<div class="card-price-container"><span>🏷️</span><span class="card-price">{price_display}</span><span class="card-price-m2">{price_m2_display}</span>{heart_link}</div>'
+                price_block = f'<div class="card-price-container"><span>🏷️</span><span class="card-price">{price_display}</span><span class="card-price-m2">{price_m2_display}</span></div>'
             else:
-                price_block = f'<div class="card-price-container"><span>🏷️</span><span class="card-price">{price_display}</span>{heart_link}</div>'
+                price_block = f'<div class="card-price-container"><span>🏷️</span><span class="card-price">{price_display}</span></div>'
 
             with col:
                 card_html = f"""
@@ -1011,6 +967,31 @@ else:
                 </div>
                 """
                 st.markdown(card_html, unsafe_allow_html=True)
+
+                if st.button("\u2764\uFE0E", key=button_key, help="is_fav" if is_favorited else "not_fav"):
+                    if is_favorited:
+                        st.session_state.favorites.remove(row['id'])
+                    else:
+                        st.session_state.favorites.add(row['id'])
+                    st.rerun()
+
+    # Set stColumn to position:relative so the absolutely-positioned fav
+    # button anchors to its own column instead of escaping to a distant
+    # static ancestor. Runs once; guard prevents re-injection on rerun.
+    st.components.v1.html("""
+        <script>
+        (function() {
+            if (window.parent.__nantimmoColFixed) return;
+            window.parent.__nantimmoColFixed = true;
+            function fixCols() {
+                var cols = window.parent.document.querySelectorAll('[data-testid="stColumn"]');
+                if (!cols.length) { setTimeout(fixCols, 100); return; }
+                cols.forEach(function(c) { c.style.position = 'relative'; });
+            }
+            setTimeout(fixCols, 200);
+        })();
+        </script>
+    """, height=0)
 
     # Nav bar (bottom)
     st.markdown(f"""
