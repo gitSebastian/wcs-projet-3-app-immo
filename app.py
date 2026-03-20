@@ -732,6 +732,10 @@ selected_date_max = min(selected_date_max, date_max_data)
 # MISE À JOUR URL
 # =============================================================
 
+# noscroll is consumed here and not written back -- it's a one-shot signal
+# to the scroll observer to restore position instead of scrolling to top.
+_noscroll = st.query_params.get('noscroll', '') == '1'
+
 st.query_params.update({
     "sites":       ",".join(selected_sites),
     "known_sites": ",".join(available_sites),
@@ -885,30 +889,58 @@ else:
         </div>
     """, unsafe_allow_html=True)
 
-    # Install a persistent scroll-to-top observer once per page load.
-    # Uses an iframe (components.v1.html) to inject a script tag into the
-    # parent document via document.createElement — avoids iframe sandbox
-    # restrictions while surviving Streamlit reruns. The observer watches
-    # stMain for DOM mutations and scrolls to top 150ms after they settle.
-    # Guard on window.__nantimmoObs ensures it only installs once.
-    st.components.v1.html("""
+    # Scroll behaviour on rerun:
+    # - Normal navigation (page change, filter apply): scroll to top.
+    # - Heart click: restore saved scroll position.
+    #
+    # Mechanism: the heart link saves scrollTop to sessionStorage before
+    # navigating and adds noscroll=1 to the URL. Python reads and strips
+    # noscroll, then passes _noscroll=True into this snippet each render.
+    # The snippet writes window.parent.__nantimmoRestore on every render
+    # (not guarded), so the observer always sees the current value.
+    st.components.v1.html(f"""
         <script>
-        if (!window.parent.__nantimmoObs) {
-            var s = window.parent.document.createElement('script');
-            s.textContent = `
-                var el = document.querySelector('[data-testid=stMain]');
-                if (el && !window.__nantimmoObs) {
+        (function() {{
+            var par = window.parent;
+            var doc = par.document;
+
+            // Always update the restore flag for this render
+            par.__nantimmoRestore = {'true' if _noscroll else 'false'};
+
+            // Register heart-click saver once
+            if (!par.__nantimmoHeartSave) {{
+                par.__nantimmoHeartSave = true;
+                doc.addEventListener('click', function(e) {{
+                    if (!e.target.closest('.heart-btn')) return;
+                    var el = doc.querySelector('[data-testid="stMain"]');
+                    if (el) sessionStorage.setItem('nantimmo_scroll', el.scrollTop);
+                }}, true);
+            }}
+
+            // Install MutationObserver once; it reads __nantimmoRestore each fire
+            if (!par.__nantimmoObs) {{
+                par.__nantimmoObs = true;
+                var el = doc.querySelector('[data-testid="stMain"]');
+                if (el) {{
                     var t = null;
-                    window.__nantimmoObs = new MutationObserver(function() {
+                    new MutationObserver(function() {{
                         clearTimeout(t);
-                        t = setTimeout(function() { el.scrollTop = 0; }, 150);
-                    });
-                    window.__nantimmoObs.observe(el, { childList: true, subtree: true });
-                }
-            `;
-            window.parent.document.head.appendChild(s);
-            window.parent.__nantimmoObs = true;
-        }
+                        t = setTimeout(function() {{
+                            if (par.__nantimmoRestore) {{
+                                var saved = sessionStorage.getItem('nantimmo_scroll');
+                                if (saved !== null) {{
+                                    el.scrollTop = parseInt(saved);
+                                    sessionStorage.removeItem('nantimmo_scroll');
+                                }}
+                                par.__nantimmoRestore = false;
+                            }} else {{
+                                el.scrollTop = 0;
+                            }}
+                        }}, 150);
+                    }}).observe(el, {{ childList: true, subtree: true }});
+                }}
+            }}
+        }})();
         </script>
     """, height=0)
 
@@ -945,6 +977,7 @@ else:
             toggled_favs = current_favs - {row['id']} if is_favorited else current_favs | {row['id']}
             fav_params = dict(st.query_params)
             fav_params['favorites'] = ','.join(str(x) for x in toggled_favs)
+            fav_params['noscroll'] = '1'  # tells the scroll observer to restore position
             fav_url = '?' + '&'.join(f'{k}={v}' for k, v in fav_params.items())
 
             heart_link = (
