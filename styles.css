@@ -295,13 +295,13 @@
     margin-bottom: 1.5rem;
 }
 
-div[data-testid="stVerticalBlock"]:has(.st-key-fab_open_filters),
 .st-key-fab_open_filters {
-    position: fixed;
-    bottom: 5rem;
-    right: 0rem;
-    z-index: 9999;
-    width: fit-content;
+    position: fixed !important;
+    bottom: 5rem !important;
+    right: 0 !important;
+    left: unset !important;
+    z-index: 9999 !important;
+    width: fit-content !important;
 }
 /* FAB button — round */
 .st-key-fab_open_filters button {
