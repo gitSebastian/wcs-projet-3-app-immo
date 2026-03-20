@@ -981,37 +981,42 @@ else:
                         st.session_state.favorites.add(row['id'])
                     st.rerun()
 
-    # Heart button JS repositioning -- runs once per page render.
-    # Reads the real position of each .card-price-container and aligns its
-    # sibling fav button to match, making the layout invariant to Streamlit
-    # version differences in column padding between local and Cloud.
+    # Heart button DOM transplant -- runs once per page render.
+    # Moves each fav button physically into its .card-price-container so that
+    # position:absolute is anchored to the price bar itself, not to some
+    # distant Streamlit ancestor. This is invariant to Streamlit version,
+    # column padding, and scroll position.
     st.components.v1.html("""
         <script>
         (function() {
             if (window.parent.__nantimmoHeartFixed) return;
             window.parent.__nantimmoHeartFixed = true;
-            function positionHearts() {
+            function transplantHearts() {
                 var doc = window.parent.document;
-                var favWrappers = doc.querySelectorAll('[class*="st-key-fav_"]');
+                var cols = doc.querySelectorAll('[data-testid="stColumn"]');
                 var moved = 0;
-                favWrappers.forEach(function(wrapper) {
-                    var col = wrapper.closest('[data-testid="stColumn"]') || wrapper.closest('.stColumn');
-                    if (!col) return;
+                cols.forEach(function(col) {
+                    var favWrapper = col.querySelector('[class*="st-key-fav_"]');
                     var price = col.querySelector('.card-price-container');
-                    if (!price) return;
-                    var btn = wrapper.querySelector('[data-testid="stBaseButton-secondary"]');
+                    if (!favWrapper || !price) return;
+                    var btn = favWrapper.querySelector('[data-testid="stBaseButton-secondary"]');
                     if (!btn) return;
-                    var wrapperRect = wrapper.getBoundingClientRect();
-                    var priceRect = price.getBoundingClientRect();
-                    // Offset = how far up (negative) from wrapper.bottom to price.top
-                    var offset = priceRect.top - wrapperRect.bottom;
-                    btn.style.setProperty('top', offset + 'px', 'important');
+                    // Make price bar the positioning context
+                    price.style.position = 'relative';
+                    // Move btn physically into the price bar
+                    price.appendChild(btn);
+                    btn.style.setProperty('position', 'absolute', 'important');
+                    btn.style.setProperty('top', '0', 'important');
+                    btn.style.setProperty('right', '0', 'important');
+                    btn.style.setProperty('bottom', '0', 'important');
+                    btn.style.setProperty('width', 'auto', 'important');
+                    btn.style.setProperty('margin', '0', 'important');
                     moved++;
                 });
-                // Retry if no buttons found yet (DOM still rendering)
-                if (moved === 0) { setTimeout(positionHearts, 100); }
+                // Retry if columns not yet rendered
+                if (moved === 0) { setTimeout(transplantHearts, 100); }
             }
-            setTimeout(positionHearts, 200);
+            setTimeout(transplantHearts, 200);
         })();
         </script>
     """, height=0)

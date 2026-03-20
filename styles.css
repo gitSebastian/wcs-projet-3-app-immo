@@ -215,14 +215,10 @@
 
 /* Heart (fav) button — absolute-positioned inside card column.
    Scoped to .st-key-fav_* so it never bleeds into other column buttons. */
-[class*="st-key-fav_"] {
-    position: relative;
-}
-
+/* .st-key-fav_ positioning is handled entirely by the DOM transplant JS in app.py.
+   The button is moved into .card-price-container at render time, so no
+   absolute positioning rules are needed here. Only visual styling remains. */
 [class*="st-key-fav_"] [data-testid="stBaseButton-secondary"] {
-    position: absolute;
-    top: 0;
-    right: 18px;
     z-index: 1000 !important;
     width: auto !important;
     background: rgba(0, 0, 0, 0.0) !important;
