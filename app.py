@@ -937,22 +937,26 @@ else:
             description = (raw_desc[:100] + '…') if len(raw_desc) > 100 else (raw_desc or 'Pas de description')
 
             is_favorited = row['id'] in st.session_state.favorites
-            heart_icon = "❤\uFE0E"
-            button_key = f"fav_{row['id']}"
             heart_color = "#10B981" if is_favorited else "var(--text-gray)"
-            st.markdown(
-                f"<style>.st-key-fav_{row['id']} button p {{ color: {heart_color} !important; font-size: 1.6rem !important; }}</style>",
-                unsafe_allow_html=True
+
+            # Toggle URL: add or remove this listing id from the favorites param.
+            # Same mechanism as pagination -- pure HTML link, no React involved.
+            current_favs = set(st.session_state.favorites)
+            toggled_favs = current_favs - {row['id']} if is_favorited else current_favs | {row['id']}
+            fav_params = dict(st.query_params)
+            fav_params['favorites'] = ','.join(str(x) for x in toggled_favs)
+            fav_url = '?' + '&'.join(f'{k}={v}' for k, v in fav_params.items())
+
+            heart_link = (
+                f'<a href="{fav_url}" target="_self" class="heart-btn" '
+                f'style="color:{heart_color}" aria-label="Favori">&#10084;&#65038;</a>'
             )
 
-            # Build price bar. Constructed as a single-line f-string (no triple
-            # quotes, no intermediate variable passed into another f-string) to
-            # avoid any whitespace/newline artefacts that can confuse Streamlit's
-            # markdown-to-HTML pipeline.
+            # Build price bar.
             if price_m2_display:
-                price_block = f'<div class="card-price-container"><span>🏷️</span><span class="card-price">{price_display}</span><span class="card-price-m2">{price_m2_display}</span></div>'
+                price_block = f'<div class="card-price-container"><span>🏷️</span><span class="card-price">{price_display}</span><span class="card-price-m2">{price_m2_display}</span>{heart_link}</div>'
             else:
-                price_block = f'<div class="card-price-container"><span>🏷️</span><span class="card-price">{price_display}</span></div>'
+                price_block = f'<div class="card-price-container"><span>🏷️</span><span class="card-price">{price_display}</span>{heart_link}</div>'
 
             with col:
                 card_html = f"""
@@ -974,55 +978,6 @@ else:
                 </div>
                 """
                 st.markdown(card_html, unsafe_allow_html=True)
-
-                # Bouton favori
-                if st.button(heart_icon, key=button_key, help="is_fav" if is_favorited else "not_fav"):
-                    if is_favorited:
-                        st.session_state.favorites.remove(row['id'])
-                    else:
-                        st.session_state.favorites.add(row['id'])
-                    st.rerun()
-
-    # Heart button transplant -- moves each fav button into its
-    # .card-price-container (which is outside the <a> tags), then hides the
-    # now-empty Streamlit wrapper to kill the ghost emoji it leaves behind.
-    # The price bar gets position:relative so the button's top/bottom/right:0
-    # fills it exactly. Clicks reach Streamlit normally -- no link conflict.
-    st.components.v1.html("""
-        <script>
-        (function() {
-            if (window.parent.__nantimmoHeartFixed) return;
-            window.parent.__nantimmoHeartFixed = true;
-            function transplant() {
-                var doc = window.parent.document;
-                var cols = doc.querySelectorAll('[data-testid="stColumn"]');
-                var moved = 0;
-                cols.forEach(function(col) {
-                    var wrapper = col.querySelector('[class*="st-key-fav_"]');
-                    var price = col.querySelector('.card-price-container');
-                    if (!wrapper || !price) return;
-                    var btn = wrapper.querySelector('[data-testid="stBaseButton-secondary"]');
-                    if (!btn) return;
-                    // Preserve heart color across the DOM move.
-                    // The per-card <style> block targets .st-key-fav_{id} button p,
-                    // which stops matching after appendChild. Read the computed
-                    // color now and stamp it inline so it travels with the node.
-                    var p = btn.querySelector('p');
-                    if (p) {
-                        var color = window.getComputedStyle(p).color;
-                        p.style.setProperty('color', color, 'important');
-                    }
-                    price.style.position = 'relative';
-                    price.appendChild(btn);
-                    wrapper.style.setProperty('display', 'none', 'important');
-                    moved++;
-                });
-                if (moved === 0) { setTimeout(transplant, 100); }
-            }
-            setTimeout(transplant, 200);
-        })();
-        </script>
-    """, height=0)
 
     # Nav bar (bottom)
     st.markdown(f"""

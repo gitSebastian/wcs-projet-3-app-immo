@@ -213,25 +213,29 @@
     width: 100% !important;
 }
 
-/* Heart (fav) button — absolute-positioned inside card column.
-   Scoped to .st-key-fav_* so it never bleeds into other column buttons. */
-/* Fav button is transplanted into .card-price-container by JS in app.py.
-   Targeted by its post-transplant location, not its original Streamlit wrapper.
-   The price bar gets position:relative (set by JS) as the CSS anchor.
-   top/bottom/right 0 stretches the button to fill the bar exactly.
-   The price bar is outside the <a> tags so clicks are never intercepted. */
-.card-price-container > [data-testid="stBaseButton-secondary"] {
-    position: absolute !important;
-    top: 0 !important;
-    bottom: 0 !important;
-    right: 0 !important;
-    z-index: 1000 !important;
-    width: auto !important;
-    background: rgba(0, 0, 0, 0.0) !important;
-    border-radius: 0 var(--radius-small) var(--radius-small) 0 !important;
-    border: none !important;
-    font-size: 20px !important;
-    padding: 0 16px !important;
+/* Heart (fav) link — plain <a> rendered inside .card-price-container.
+   No Streamlit button involved: clicking navigates with target=_self,
+   updating the favorites= URL param and triggering a clean rerun. */
+.card-price-container {
+    position: relative;
+}
+
+.heart-btn {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    right: 0;
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    font-size: 20px;
+    text-decoration: none !important;
+    border-radius: 0 var(--radius-small) var(--radius-small) 0;
+    transition: opacity 0.15s ease;
+}
+
+.heart-btn:hover {
+    opacity: 0.75;
 }
 
 
