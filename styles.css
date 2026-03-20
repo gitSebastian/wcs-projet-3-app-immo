@@ -295,6 +295,7 @@
     margin-bottom: 1.5rem;
 }
 
+div[data-testid="stVerticalBlock"]:has(.st-key-fab_open_filters),
 .st-key-fab_open_filters {
     position: fixed;
     bottom: 5rem;
