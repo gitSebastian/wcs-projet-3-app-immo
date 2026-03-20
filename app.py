@@ -178,7 +178,7 @@ logo_base64 = image_to_base64(LOGO_PATH)
 logo_svg_text = load_svg_as_text(LOGO_PATH)
 
 # Données (cache de 10 minutes)
-DEV_MODE = True  # ← False en production
+DEV_MODE = os.environ.get("DEV_MODE", "false").lower() == "true"
 
 if DEV_MODE:
     # Pas de cache pendant le dev
@@ -206,6 +206,10 @@ df['scraped_date_dt'] = pd.to_datetime(df['scraped_date'], errors='coerce').dt.d
 # Favoris (session state)
 if 'favorites' not in st.session_state:
     st.session_state.favorites = load_favorites_from_url()
+# Write favorites to URL immediately — tightens the PTR race window so a
+# reload fired before the bottom-of-script query_params.update() still
+# captures the current state.
+st.query_params["favorites"] = ",".join(str(x) for x in st.session_state.favorites)
 
 # Applied filter state — persists across dialog open/close cycles.
 # Initialised from URL params so bookmarked links still work on first load.
@@ -670,6 +674,59 @@ with fab:
                     setTimeout(function() { spinner.style.transition = ''; }, 220);
                 }
             }, { passive: true });
+        })();
+        </script>
+    """, height=0)
+
+    # localStorage safety net for favorites.
+    # Primary fix for iOS PWA: when the app is closed and reopened, iOS
+    # restores it to the base URL with no query params, wiping URL-stored
+    # favorites. localStorage survives PWA close/reopen on all platforms.
+    #
+    # Logic:
+    #   On load -- if ?favorites= is absent/empty but localStorage has data,
+    #   restore via location.replace() (no history entry) so Streamlit
+    #   re-inits with the correct favorites in the URL.
+    #   On every render -- sync current ?favorites= to localStorage so the
+    #   stored value is always fresh (including when user clears all favs).
+    #   Priority rule -- URL always wins over localStorage. We only restore
+    #   from storage when the URL param is genuinely absent, never override
+    #   an explicit param (preserves shared-link behavior).
+    st.components.v1.html("""
+        <script>
+        (function() {
+            if (window.parent.__nantimmoFavLS) return;
+            window.parent.__nantimmoFavLS = true;
+
+            var LS_KEY = 'nantimmo_favorites';
+
+            function getURLFavorites() {
+                var params = new URLSearchParams(window.parent.location.search);
+                return params.get('favorites') || '';
+            }
+
+            function setURLFavorites(val) {
+                var params = new URLSearchParams(window.parent.location.search);
+                params.set('favorites', val);
+                var newURL = window.parent.location.pathname + '?' + params.toString();
+                window.parent.location.replace(newURL);
+            }
+
+            var urlFavs = getURLFavorites();
+            var storedFavs = '';
+            try { storedFavs = localStorage.getItem(LS_KEY) || ''; } catch(e) {}
+
+            if (!urlFavs && storedFavs) {
+                // URL is empty but localStorage has favorites -- restore and
+                // reload so Streamlit picks them up from the URL on init.
+                setURLFavorites(storedFavs);
+                return;
+            }
+
+            // Sync current URL favorites to localStorage on every render.
+            // Runs after the restore check so we never overwrite storage
+            // with an empty string during the restore redirect cycle.
+            try { localStorage.setItem(LS_KEY, urlFavs); } catch(e) {}
         })();
         </script>
     """, height=0)
