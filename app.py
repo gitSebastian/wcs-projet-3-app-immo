@@ -1011,6 +1011,10 @@ else:
                     btn.style.setProperty('bottom', '0', 'important');
                     btn.style.setProperty('width', 'auto', 'important');
                     btn.style.setProperty('margin', '0', 'important');
+                    // Hide the now-empty wrapper -- the stTooltipHoverTarget
+                    // ancestor chain stays in the DOM after appendChild and
+                    // renders a ghost heart emoji without the button.
+                    favWrapper.style.setProperty('display', 'none', 'important');
                     moved++;
                 });
                 // Retry if columns not yet rendered
