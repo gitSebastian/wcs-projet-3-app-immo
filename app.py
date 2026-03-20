@@ -910,6 +910,14 @@ else:
     """, height=0)
 
 
+    # Inject all heart color rules in a single st.markdown call to avoid
+    # per-card empty stMarkdownContainer elements that create row gaps.
+    heart_styles = ''.join(
+        f".st-key-fav_{row['id']} button p {{ color: {'#10B981' if row['id'] in st.session_state.favorites else 'var(--text-gray)'} !important; font-size: 1.6rem !important; }}"
+        for _, row in page_df.iterrows()
+    )
+    st.markdown(f'<style>{heart_styles}</style>', unsafe_allow_html=True)
+
     # Afficher les cartes, row-by-row (3 per row) to avoid empty column gaps on last row
     for chunk_start in range(0, len(page_df), 3):
         chunk = page_df.iloc[chunk_start:chunk_start+3]
@@ -934,12 +942,7 @@ else:
             description = (raw_desc[:100] + '…') if len(raw_desc) > 100 else (raw_desc or 'Pas de description')
 
             is_favorited = row['id'] in st.session_state.favorites
-            heart_color = "#10B981" if is_favorited else "var(--text-gray)"
             button_key = f"fav_{row['id']}"
-            st.markdown(
-                f"<style>.st-key-fav_{row['id']} button p {{ color: {heart_color} !important; font-size: 1.6rem !important; }}</style>",
-                unsafe_allow_html=True
-            )
 
             # Build price bar.
             if price_m2_display:
