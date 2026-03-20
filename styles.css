@@ -299,9 +299,8 @@
     position: fixed !important;
     bottom: 5rem !important;
     right: 0 !important;
-    left: unset !important;
+    width: 3.5rem !important;
     z-index: 9999 !important;
-    width: fit-content !important;
 }
 /* FAB button — round */
 .st-key-fab_open_filters button {
