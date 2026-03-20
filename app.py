@@ -1,5 +1,5 @@
 # =============================================================
-# streamlit run WCS/github/wcs-projet-3-app-immo/app.py --server.address 192.168.1.35
+# DEV_MODE=true streamlit run WCS/github/wcs-projet-3-app-immo/app.py --server.address 192.168.1.35
 # =============================================================
 
 import streamlit as st
@@ -8,6 +8,7 @@ import psycopg2
 import base64
 import os
 import re
+from urllib.parse import urlencode
 from datetime import date, timedelta
 from pathlib import Path
 from streamlit_float import *
@@ -927,7 +928,7 @@ else:
         """Build a URL for page p preserving all current query params."""
         params = dict(st.query_params)
         params['page'] = str(p)
-        return '?' + '&'.join(f'{k}={v}' for k, v in params.items())
+        return '?' + urlencode(params)
 
     prev_url  = _nav_url(current_page - 1)
     next_url  = _nav_url(current_page + 1)
