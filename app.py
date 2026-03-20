@@ -957,18 +957,20 @@ else:
             with col:
                 card_html = f"""
                 <div class="card-wrapper">
-                    <a href="{row['url']}" target="_blank" class="card-link">
-                        <div class="card">
+                    <div class="card">
+                        <a href="{row['url']}" target="_blank" class="card-link">
                             <img src="{row['image_url']}" class="card-image" alt="Photo">
-                            <div class="card-meta">
-                                    <div class="card-logo-wrapper">{logo_svg_text}</div>
-                                    <div class="card-meta-text">{row['site']} · {row['scraped_date']}</div>
-                            </div>
+                        </a>
+                        <div class="card-meta">
+                            <div class="card-logo-wrapper">{logo_svg_text}</div>
+                            <div class="card-meta-text">{row['site']} · {row['scraped_date']}</div>
+                        </div>
+                        <a href="{row['url']}" target="_blank" class="card-link">
                             <div class="card-title">{title}</div>
                             <div class="card-description">{description}</div>
-                            {price_block}
-                        </div>
-                    </a>
+                        </a>
+                        {price_block}
+                    </div>
                 </div>
                 """
                 st.markdown(card_html, unsafe_allow_html=True)
@@ -981,48 +983,43 @@ else:
                         st.session_state.favorites.add(row['id'])
                     st.rerun()
 
-    # Heart button positioning -- runs once per page render.
-    # The button lives outside the <a> tag in the Streamlit DOM (correct, so
-    # clicks are not swallowed by the card link). The problem is that
-    # position:absolute on the button escapes to a distant ancestor because
-    # every intermediate Streamlit div is position:static.
-    # Fix: set position:relative on the stColumn itself, then anchor the
-    # button with bottom + right calculated from the column bottom edge.
-    # bottom = price bar height + card bottom padding (both fixed values).
-    # This is environment-invariant: it doesn't depend on content height above.
+    # Heart button transplant -- moves each fav button into its
+    # .card-price-container (which is outside the <a> tags), then hides the
+    # now-empty Streamlit wrapper to kill the ghost emoji it leaves behind.
+    # The price bar gets position:relative so the button's top/bottom/right:0
+    # fills it exactly. Clicks reach Streamlit normally -- no link conflict.
     st.components.v1.html("""
         <script>
         (function() {
             if (window.parent.__nantimmoHeartFixed) return;
             window.parent.__nantimmoHeartFixed = true;
-            function positionHearts() {
+            function transplant() {
                 var doc = window.parent.document;
                 var cols = doc.querySelectorAll('[data-testid="stColumn"]');
                 var moved = 0;
                 cols.forEach(function(col) {
-                    var favWrapper = col.querySelector('[class*="st-key-fav_"]');
+                    var wrapper = col.querySelector('[class*="st-key-fav_"]');
                     var price = col.querySelector('.card-price-container');
-                    if (!favWrapper || !price) return;
-                    var btn = favWrapper.querySelector('[data-testid="stBaseButton-secondary"]');
+                    if (!wrapper || !price) return;
+                    var btn = wrapper.querySelector('[data-testid="stBaseButton-secondary"]');
                     if (!btn) return;
-                    // Make the stColumn the positioning context
-                    col.style.position = 'relative';
-                    // Measure how far the price bar sits from the column bottom
-                    var colRect = col.getBoundingClientRect();
-                    var priceRect = price.getBoundingClientRect();
-                    var bottomOffset = colRect.bottom - priceRect.bottom;
-                    var rightOffset = colRect.right - priceRect.right;
-                    btn.style.setProperty('position', 'absolute', 'important');
-                    btn.style.setProperty('bottom', bottomOffset + 'px', 'important');
-                    btn.style.setProperty('right', rightOffset + 'px', 'important');
-                    btn.style.setProperty('top', 'auto', 'important');
-                    btn.style.setProperty('width', 'auto', 'important');
-                    btn.style.setProperty('margin', '0', 'important');
+                    // Preserve heart color across the DOM move.
+                    // The per-card <style> block targets .st-key-fav_{id} button p,
+                    // which stops matching after appendChild. Read the computed
+                    // color now and stamp it inline so it travels with the node.
+                    var p = btn.querySelector('p');
+                    if (p) {
+                        var color = window.getComputedStyle(p).color;
+                        p.style.setProperty('color', color, 'important');
+                    }
+                    price.style.position = 'relative';
+                    price.appendChild(btn);
+                    wrapper.style.setProperty('display', 'none', 'important');
                     moved++;
                 });
-                if (moved === 0) { setTimeout(positionHearts, 100); }
+                if (moved === 0) { setTimeout(transplant, 100); }
             }
-            setTimeout(positionHearts, 200);
+            setTimeout(transplant, 200);
         })();
         </script>
     """, height=0)
