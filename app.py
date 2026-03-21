@@ -297,6 +297,35 @@ _filters_are_active = any([
     _applied_date_max is not None and date.fromisoformat(_applied_date_max) < _date_max_data,
 ])
 
+# ── DEV_MODE: flag report dialog ────────────────────────────────
+# Opens from the flag button on each card. Writes one row to dedup_reports.
+# No matching or linking happens -- pure observation capture.
+@st.dialog("🚩 Signaler un doublon", width="small")
+def flag_report_dialog(row_id: int, row_title: str, row_site: str):
+    st.markdown(f"**Annonce signalée:** `#{row_id}` · {row_site}")
+    st.caption(row_title[:80] + ('…' if len(row_title) > 80 else ''))
+    st.divider()
+    notes = st.text_area(
+        "Notes",
+        placeholder="ex: dupe de #1234, même bien que l'annonce Bien'Ici vue hier...",
+        height=100,
+        key=f"flag_notes_{row_id}",
+    )
+    if st.button("Envoyer le signalement", type="primary", use_container_width=True):
+        try:
+            conn = psycopg2.connect(DATABASE_URL, connect_timeout=10)
+            conn.autocommit = True
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO dedup_reports (id_a, site_a, notes) VALUES (%s, %s, %s)",
+                    (row_id, row_site, notes.strip() or None)
+                )
+            conn.close()
+            st.success(f"Signalement enregistré pour #{row_id}")
+        except Exception as e:
+            st.error(f"Erreur: {e}")
+
+
 # ── Filter dialog ──────────────────────────────────────────────
 @st.dialog("⚙️ Filtres", width="large")
 def filter_panel():
@@ -1132,6 +1161,10 @@ else:
                     else:
                         st.session_state.favorites.add(row['id'])
                     st.rerun()
+
+                if DEV_MODE:
+                    if st.button("\U0001f6a9", key=f"flag_{row['id']}", help="Signaler comme doublon"):
+                        flag_report_dialog(row['id'], row_title=title, row_site=row['site'])
 
     # Set stColumn to position:relative so the absolutely-positioned fav
     # button anchors to its own column instead of escaping to a distant
