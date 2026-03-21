@@ -541,7 +541,7 @@ with fab:
             style.textContent = `
                 #stt-btn {
                     position: fixed;
-                    bottom: 9rem;
+                    bottom: 13rem;
                     right: 0;
                     width: 66px;
                     height: 3.5rem;
@@ -557,7 +557,6 @@ with fab:
                     display: flex;
                     align-items: center;
                     justify-content: center;
-                    box-shadow: -2px 0 8px rgba(0,0,0,0.4);
                     transition: background 0.15s ease;
                 }
                 #stt-btn:hover { background: #3a3a3a; }
@@ -600,7 +599,7 @@ with fab:
                 var fab = doc.querySelector('.st-key-fab_open_filters');
                 if (!fab) { setTimeout(fix, 50); return; }
                 fab.style.setProperty('position', 'fixed', 'important');
-                fab.style.setProperty('bottom', '5rem', 'important');
+                fab.style.setProperty('bottom', '9rem', 'important');
                 fab.style.setProperty('right', '0', 'important');
                 fab.style.setProperty('left', 'auto', 'important');
                 fab.style.setProperty('width', '66px', 'important');
