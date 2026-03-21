@@ -1045,6 +1045,26 @@ else:
     """, height=0)
 
 
+    # DEV_MODE toolbar: shows dedup stats and link to review page.
+    # Never rendered in production (DEV_MODE=false).
+    if DEV_MODE:
+        conn = psycopg2.connect(DATABASE_URL, connect_timeout=10)
+        conn.autocommit = True
+        try:
+            _linked_count = pd.read_sql_query(
+                'SELECT COUNT(*) as n FROM properties WHERE canonical_id IS NOT NULL', conn
+            ).iloc[0]['n']
+        finally:
+            conn.close()
+        st.markdown(
+            f'<div class="dev-toolbar">'
+            f'🛠 DEV · '
+            f'<b>{_linked_count}</b> doublons masqués '
+            f'· <a href="/dedup_review" target="_self">Voir les paires →</a>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+
     # Inject all heart color rules in a single st.markdown call to avoid
     # per-card empty stMarkdownContainer elements that create row gaps.
     heart_styles = ''.join(
@@ -1094,7 +1114,7 @@ else:
                         </a>
                         <div class="card-meta">
                             <div class="card-logo-wrapper">{logo_svg_text}</div>
-                            <div class="card-meta-text">{row['site']} · {row['scraped_date']}</div>
+                            <div class="card-meta-text">{row['site']} · {row['scraped_date']}{' · <span class="dev-id">#' + str(row['id']) + '</span>' if DEV_MODE else ''}</div>
                         </div>
                         <a href="{row['url']}" target="_blank" class="card-link">
                             <div class="card-title">{title}</div>

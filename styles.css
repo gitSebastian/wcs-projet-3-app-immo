@@ -395,3 +395,28 @@ div[data-testid="stDialog"] .st-key-sites_select_none button:hover {
     background: #333 !important;
     border-color: #444 !important;
 }
+
+/* DEV_MODE: ID badge on card meta line */
+.dev-id {
+    color: #6b7280;
+    font-size: 0.75rem;
+    font-family: monospace;
+}
+
+/* DEV_MODE: toolbar banner above card grid */
+.dev-toolbar {
+    background: #1c1c2e;
+    border: 1px solid #374151;
+    border-radius: 6px;
+    padding: 6px 12px;
+    margin-bottom: 12px;
+    font-size: 0.8rem;
+    color: #9ca3af;
+}
+.dev-toolbar a {
+    color: #10B981 !important;
+    text-decoration: none !important;
+}
+.dev-toolbar a:hover {
+    text-decoration: underline !important;
+}
