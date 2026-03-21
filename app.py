@@ -517,23 +517,95 @@ with fab:
     if st.button("⚙\uFE0E", key="fab_open_filters"):
         filter_panel()
 
-    # Fix FAB position directly via JS -- CSS right:0 is unreliable in Safari
-    # when the element's static flow position is on the left. Inline style wins
-    # over any stylesheet rule in all browsers.
+    # Scroll-to-top: pure HTML button injected into the parent frame.
+    # Using st.button would trigger a Streamlit rerun on every click, which
+    # destroys and recreates the component iframe -- the scroll fires once
+    # then stops working. A native DOM button bypasses Streamlit entirely:
+    # no rerun, no DOM teardown, works on every tap.
+    # One-shot guard on window.parent is safe here (unlike the position-fix
+    # scripts) because this button lives in the parent frame permanently --
+    # it is never destroyed by a Streamlit rerun.
     st.components.v1.html("""
         <script>
         (function() {
-            if (window.parent.__nantimmoFABFixed) return;
+            if (window.parent.__nantimmoSTT) return;
+            window.parent.__nantimmoSTT = true;
+            var doc = window.parent.document;
+
+            var btn = doc.createElement('button');
+            btn.id = 'stt-btn';
+            btn.innerHTML = '&#8593;';
+            doc.body.appendChild(btn);
+
+            var style = doc.createElement('style');
+            style.textContent = `
+                #stt-btn {
+                    position: fixed;
+                    bottom: 7rem;
+                    right: 0;
+                    width: 66px;
+                    height: 3.5rem;
+                    background: #2b2b2b;
+                    color: white;
+                    border: 0;
+                    border-radius: 8px 0 0 8px;
+                    font-size: 2rem;
+                    font-weight: 600;
+                    line-height: 1;
+                    cursor: pointer;
+                    z-index: 9999;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    box-shadow: -2px 0 8px rgba(0,0,0,0.4);
+                    transition: background 0.15s ease;
+                }
+                #stt-btn:hover { background: #3a3a3a; }
+                #stt-btn:active { background: #1a1a1a; }
+            `;
+            doc.head.appendChild(style);
+
+            btn.addEventListener('click', function() {
+                var el = doc.querySelector('[data-testid="stMain"]');
+                if (el) el.scrollTop = 0;
+            });
+        })();
+        </script>
+    """, height=0)
+
+    # Fix FAB position directly via JS -- CSS right:0 is unreliable in Safari
+    # when the element's static flow position is on the left. Inline style wins
+    # over any stylesheet rule in all browsers.
+    # Button is hidden until JS positions it to prevent a visible flash while
+    # the element is still in static flow. visibility:hidden keeps layout space
+    # (unlike display:none) so the container doesn't collapse between renders.
+    # No one-shot guard: Streamlit reruns destroy/recreate the DOM so the
+    # fix must re-apply on every render.
+    st.components.v1.html("""
+        <script>
+        (function() {
+            var doc = window.parent.document;
+
+            // Hide immediately so the button is invisible while in static flow.
+            // Runs synchronously -- before the browser paints -- so no flash.
+            var style = doc.getElementById('fab-hide-style');
+            if (!style) {
+                style = doc.createElement('style');
+                style.id = 'fab-hide-style';
+                style.textContent = '.st-key-fab_open_filters { visibility: hidden; }';
+                doc.head.appendChild(style);
+            }
+
             var fix = function() {
-                var fab = window.parent.document.querySelector('.st-key-fab_open_filters');
+                var fab = doc.querySelector('.st-key-fab_open_filters');
                 if (!fab) { setTimeout(fix, 50); return; }
                 fab.style.setProperty('position', 'fixed', 'important');
-                fab.style.setProperty('bottom', '5rem', 'important');
+                fab.style.setProperty('bottom', '3rem', 'important');
                 fab.style.setProperty('right', '0', 'important');
                 fab.style.setProperty('left', 'auto', 'important');
-                fab.style.setProperty('width', '3.5rem', 'important');
+                fab.style.setProperty('width', '66px', 'important');
                 fab.style.setProperty('z-index', '9999', 'important');
-                window.parent.__nantimmoFABFixed = true;
+                fab.style.setProperty('visibility', 'visible', 'important');
             };
             fix();
         })();
