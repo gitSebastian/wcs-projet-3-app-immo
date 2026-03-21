@@ -1015,18 +1015,17 @@ else:
                 price_block = f'<div class="card-price-container"><span>🏷️</span><span class="card-price">{price_display}</span></div>'
 
             with col:
-                listing_url = row['url'] + '#noredir' if row['url'] else ''
                 card_html = f"""
                 <div class="card-wrapper">
                     <div class="card">
-                        <a href="{listing_url}" target="_blank" class="card-link">
+                        <a href="{row['url']}" target="_blank" class="card-link">
                             <img src="{row['image_url']}" class="card-image" alt="Photo">
                         </a>
                         <div class="card-meta">
                             <div class="card-logo-wrapper">{logo_svg_text}</div>
                             <div class="card-meta-text">{row['site']} · {row['scraped_date']}</div>
                         </div>
-                        <a href="{listing_url}" target="_blank" class="card-link">
+                        <a href="{row['url']}" target="_blank" class="card-link">
                             <div class="card-title">{title}</div>
                             <div class="card-description">{description}</div>
                         </a>
