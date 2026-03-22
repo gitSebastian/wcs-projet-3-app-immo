@@ -175,11 +175,13 @@ with tab_pairs:
                     st.markdown(f"**Canonical** \u00b7 `#{row['canonical_id']}`")
                     st.markdown(f"**Site:** {row['canonical_site']}")
                     st.markdown(f"**Date:** {row['canonical_date']}")
-                    st.markdown(f"**Ref:** `{row['canonical_ref'] or '\u2014'}`")
+                    _can_ref = row['canonical_ref'] or '\u2014'
+                    st.markdown(f"**Ref:** `{_can_ref}`")
                     price = f"{int(row['canonical_price']):,} \u20ac".replace(",", " ") if pd.notna(row['canonical_price']) else "\u2014"
                     m2 = f"{row['canonical_m2']} m\u00b2" if pd.notna(row['canonical_m2']) else "\u2014"
                     st.markdown(f"**Prix:** {price}  |  **Surface:** {m2}")
-                    st.markdown(f"**Titre:** {row['canonical_title'] or '\u2014'}")
+                    _can_title = row['canonical_title'] or '\u2014'
+                    st.markdown(f"**Titre:** {_can_title}")
                     st.markdown(f"[Voir l'annonce \u2192]({row['canonical_url']})")
 
                 st.caption(f"To unlink: `UPDATE properties SET canonical_id = NULL WHERE id = {row['dupe_id']};`")
