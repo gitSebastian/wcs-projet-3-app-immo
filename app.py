@@ -496,17 +496,9 @@ def filter_panel():
         default_sites = get_url_param_list('sites', available_sites)
 
     st.markdown("**Sources**")
-    col_all, col_none = st.columns(2)
-    with col_all:
-        if st.button("✓ Tout", use_container_width=True, key="sites_select_all"):
-            st.session_state['sites_multiselect'] = available_sites
-    with col_none:
-        if st.button("× Aucun", use_container_width=True, key="sites_select_none"):
-            st.session_state['sites_multiselect'] = []
 
     # Seed the widget key on first render so it reflects default_sites.
-    # After that the widget owns its own state — only the buttons above
-    # (or a Reset) should overwrite it externally.
+    # After that the widget owns its own state — Reset is the only external writer.
     if 'sites_multiselect' not in st.session_state:
         st.session_state['sites_multiselect'] = default_sites
 
