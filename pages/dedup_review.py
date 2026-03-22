@@ -160,11 +160,13 @@ with tab_pairs:
                     st.markdown(f"**Duplicate** \u00b7 `#{row['dupe_id']}`")
                     st.markdown(f"**Site:** {row['dupe_site']}")
                     st.markdown(f"**Date:** {row['dupe_date']}")
-                    st.markdown(f"**Ref:** `{row['dupe_ref'] or '\u2014'}`")
+                    _dupe_ref = row['dupe_ref'] or '\u2014'
+                    st.markdown(f"**Ref:** `{_dupe_ref}`")
                     price = f"{int(row['dupe_price']):,} \u20ac".replace(",", " ") if pd.notna(row['dupe_price']) else "\u2014"
                     m2 = f"{row['dupe_m2']} m\u00b2" if pd.notna(row['dupe_m2']) else "\u2014"
                     st.markdown(f"**Prix:** {price}  |  **Surface:** {m2}")
-                    st.markdown(f"**Titre:** {row['dupe_title'] or '\u2014'}")
+                    _dupe_title = row['dupe_title'] or '\u2014'
+                    st.markdown(f"**Titre:** {_dupe_title}")
                     st.markdown(f"[Voir l'annonce \u2192]({row['dupe_url']})")
 
                 with c2:

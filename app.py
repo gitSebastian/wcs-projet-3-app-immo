@@ -247,7 +247,7 @@ if 'applied_sort_label' not in st.session_state:
         url_sort = "Date (récent → ancien)"
     st.session_state.applied_sort_label = url_sort
 if 'applied_property_types' not in st.session_state:
-    st.session_state.applied_property_types = None  # None = all selected
+    st.session_state.applied_property_types = ["Appartements"]  # default: apartments only
 if 'applied_selected_sites' not in st.session_state:
     st.session_state.applied_selected_sites = None  # None = not yet resolved; resolved after df loads
 if 'applied_date_min' not in st.session_state:
@@ -309,7 +309,7 @@ _filters_are_active = any([
     set(_applied_sites) != set(_all_sites),
     _applied_date_min is not None and date.fromisoformat(_applied_date_min) > _date_min_data,
     _applied_date_max is not None and date.fromisoformat(_applied_date_max) < _date_max_data,
-    _applied_ptypes is not None and set(_applied_ptypes) != set(ALL_PROPERTY_TYPE_LABELS),
+    _applied_ptypes is not None and set(_applied_ptypes) != {"Appartements"},
 ])
 
 # ── DEV_MODE: flag report dialog ────────────────────────────────
