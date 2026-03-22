@@ -332,7 +332,7 @@
     padding-left: 10px;
 }
 
-/* Apply button inside dialog — rectangular */
+/* Apply button inside dialog — rectangular, green */
 div[data-testid="stDialog"] button[kind="primary"] {
     border-radius: 8px !important;
     width: 100% !important;
@@ -340,6 +340,18 @@ div[data-testid="stDialog"] button[kind="primary"] {
     font-size: 1rem !important;
     box-shadow: none !important;
     background-color: #10B981 !important;
+    border: none !important;
+    color: white !important;
+}
+
+/* Reset button inside dialog — same shape as Apply, Streamlit red */
+div[data-testid="stDialog"] .st-key-fab_reset_filters button {
+    border-radius: 8px !important;
+    width: 100% !important;
+    height: auto !important;
+    font-size: 1rem !important;
+    box-shadow: none !important;
+    background-color: #ff4b4b !important;
     border: none !important;
     color: white !important;
 }
