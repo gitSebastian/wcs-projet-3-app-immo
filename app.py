@@ -215,11 +215,14 @@ st.query_params["favorites"] = ",".join(str(x) for x in st.session_state.favorit
 # UI consolidation: maps display label -> list of raw DB property_type values.
 # DB stores granular types (loft, terrain, etc.) -- the UI groups them.
 # To change grouping: edit here only. Filtering logic reads this dict.
+# "Autres" is intentionally empty -- it means "anything not in the above groups".
+# The filter logic treats Autres as the inverse of named groups, so new DB types
+# (e.g. 'chateau', 'viager') automatically fall into Autres without any code change.
 PROPERTY_TYPE_GROUPS = {
     "Appartements": ["appartement", "loft"],
     "Maisons":      ["maison"],
     "Parkings":     ["parking"],
-    "Autres":       ["commercial", "terrain", "autre"],
+    "Autres":       [],  # = everything not claimed above
 }
 ALL_PROPERTY_TYPE_LABELS = list(PROPERTY_TYPE_GROUPS.keys())
 
@@ -1015,14 +1018,27 @@ else:
     # Expand to raw DB values via PROPERTY_TYPE_GROUPS before filtering.
     _active_ptypes = st.session_state.applied_property_types
     if _active_ptypes is not None and set(_active_ptypes) != set(ALL_PROPERTY_TYPE_LABELS):
-        _raw_types = [v for label in _active_ptypes for v in PROPERTY_TYPE_GROUPS.get(label, [])]
-        # Also keep rows where property_type is NULL or an unknown value not in
-        # any group -- treat them as appartements so they remain visible by default.
-        _known_types = [v for values in PROPERTY_TYPE_GROUPS.values() for v in values]
-        filtered_df = filtered_df[
-            filtered_df['property_type'].isin(_raw_types) |
-            (~filtered_df['property_type'].isin(_known_types))
-        ]
+        # _named_types: types explicitly claimed by a named group (Appartements/Maisons/Parkings).
+        # Anything not in this set is either NULL (mystery) or a non-residential type
+        # (commercial, terrain, chateau, etc.) -- all treated as "Autres".
+        # This means "Autres" never needs manual maintenance as new types are added.
+        _named_types = [v for label in PROPERTY_TYPE_GROUPS if label != 'Autres'
+                        for v in PROPERTY_TYPE_GROUPS[label]]
+        if 'Autres' in _active_ptypes:
+            # Autres selected: include anything not claimed by a named group
+            _raw_types = [v for label in _active_ptypes if label != 'Autres'
+                          for v in PROPERTY_TYPE_GROUPS[label]]
+            filtered_df = filtered_df[
+                filtered_df['property_type'].isin(_raw_types) |
+                (~filtered_df['property_type'].isin(_named_types))
+            ]
+        else:
+            # Autres not selected: include only explicitly named types + NULL pass-through
+            _raw_types = [v for label in _active_ptypes for v in PROPERTY_TYPE_GROUPS[label]]
+            filtered_df = filtered_df[
+                filtered_df['property_type'].isin(_raw_types) |
+                (filtered_df['property_type'].isna())
+            ]
 
     # Filtrer par favoris
     if show_favorites:
