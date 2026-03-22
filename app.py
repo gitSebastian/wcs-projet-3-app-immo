@@ -246,6 +246,8 @@ if 'applied_sort_label' not in st.session_state:
     if url_sort not in SORT_OPTIONS:
         url_sort = "Date (récent → ancien)"
     st.session_state.applied_sort_label = url_sort
+if 'applied_property_types' not in st.session_state:
+    st.session_state.applied_property_types = None  # None = all selected
 if 'applied_selected_sites' not in st.session_state:
     st.session_state.applied_selected_sites = None  # None = not yet resolved; resolved after df loads
 if 'applied_date_min' not in st.session_state:
@@ -275,6 +277,17 @@ st.markdown(f"""
 
 float_init()  # required once at app startup
 
+# UI consolidation: maps display label -> list of raw DB property_type values.
+# DB stores granular types (loft, terrain, etc.) -- the UI groups them.
+# To change grouping: edit here only. Filtering logic reads this dict.
+PROPERTY_TYPE_GROUPS = {
+    "Appartements": ["appartement", "loft"],
+    "Maisons":      ["maison"],
+    "Parkings":     ["parking"],
+    "Autres":       ["commercial", "terrain", "autre"],
+}
+ALL_PROPERTY_TYPE_LABELS = list(PROPERTY_TYPE_GROUPS.keys())
+
 # ── Compute whether any filter is currently active (used to show Reset button) ──
 # Evaluated once per main-body render, captured by the filter_panel closure.
 # "Active" means any applied value differs from the all-data default.
@@ -284,6 +297,7 @@ _date_min_data = df['scraped_date_dt'].min()
 _date_max_data = df['scraped_date_dt'].max()
 _applied_date_min = st.session_state.get('applied_date_min')
 _applied_date_max = st.session_state.get('applied_date_max')
+_applied_ptypes = st.session_state.get('applied_property_types')
 _filters_are_active = any([
     bool(st.session_state.get('applied_search', '')),
     st.session_state.get('applied_show_favorites', False),
@@ -295,6 +309,7 @@ _filters_are_active = any([
     set(_applied_sites) != set(_all_sites),
     _applied_date_min is not None and date.fromisoformat(_applied_date_min) > _date_min_data,
     _applied_date_max is not None and date.fromisoformat(_applied_date_max) < _date_max_data,
+    _applied_ptypes is not None and set(_applied_ptypes) != set(ALL_PROPERTY_TYPE_LABELS),
 ])
 
 # ── DEV_MODE: flag report dialog ────────────────────────────────
@@ -338,7 +353,8 @@ def filter_panel():
             'applied_m2_min', 'applied_m2_max',
             'applied_sort_label', 'applied_selected_sites',
             'applied_date_min', 'applied_date_max',
-            'current_page', 'sites_multiselect',
+            'applied_property_types',
+            'current_page', 'sites_multiselect', 'property_types_multiselect',
         ]
         for k in keys_to_clear:
             if k in st.session_state:
@@ -445,6 +461,30 @@ def filter_panel():
     st.divider()
 
     # ------------------------------------------------------------------
+    # Filtre Type de bien
+    # ------------------------------------------------------------------
+    # Widget uses consolidated display labels; Apply maps them back to
+    # raw DB values via PROPERTY_TYPE_GROUPS.
+    default_ptypes = (
+        st.session_state.applied_property_types
+        if st.session_state.applied_property_types is not None
+        else ALL_PROPERTY_TYPE_LABELS
+    )
+    if 'property_types_multiselect' not in st.session_state:
+        st.session_state['property_types_multiselect'] = default_ptypes
+
+    st.markdown("🏠 **Type de bien**")
+    selected_ptype_labels = st.multiselect(
+        "Type de bien",
+        options=ALL_PROPERTY_TYPE_LABELS,
+        key='property_types_multiselect',
+        label_visibility='collapsed',
+        placeholder="Choisir les types",
+    )
+
+    st.divider()
+
+    # ------------------------------------------------------------------
     # Filtre Sources
     # ------------------------------------------------------------------
     available_sites = sorted(df['site'].unique())
@@ -526,6 +566,7 @@ def filter_panel():
         st.session_state.applied_selected_sites   = selected_sites
         st.session_state.applied_date_min         = selected_date_min.isoformat()
         st.session_state.applied_date_max         = selected_date_max.isoformat()
+        st.session_state.applied_property_types   = selected_ptype_labels
         st.session_state.current_page             = 0  # reset on every filter change
         st.rerun()
 
@@ -960,6 +1001,20 @@ else:
         filtered_df = filtered_df[
             (filtered_df['square_meters'] <= m2_max) |
             (filtered_df['square_meters'].isna())  # Garde les annonces sans m² renseignés
+        ]
+
+    # Filtrer par type de bien
+    # applied_property_types holds display labels (e.g. "Appartements").
+    # Expand to raw DB values via PROPERTY_TYPE_GROUPS before filtering.
+    _active_ptypes = st.session_state.applied_property_types
+    if _active_ptypes is not None and set(_active_ptypes) != set(ALL_PROPERTY_TYPE_LABELS):
+        _raw_types = [v for label in _active_ptypes for v in PROPERTY_TYPE_GROUPS.get(label, [])]
+        # Also keep rows where property_type is NULL or an unknown value not in
+        # any group -- treat them as appartements so they remain visible by default.
+        _known_types = [v for values in PROPERTY_TYPE_GROUPS.values() for v in values]
+        filtered_df = filtered_df[
+            filtered_df['property_type'].isin(_raw_types) |
+            (~filtered_df['property_type'].isin(_known_types))
         ]
 
     # Filtrer par favoris
