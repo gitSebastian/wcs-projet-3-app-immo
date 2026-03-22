@@ -217,7 +217,7 @@ st.query_params["favorites"] = ",".join(str(x) for x in st.session_state.favorit
 if 'applied_search' not in st.session_state:
     st.session_state.applied_search = st.query_params.get("search", "")
 if 'applied_show_favorites' not in st.session_state:
-    st.session_state.applied_show_favorites = False
+    st.session_state.applied_show_favorites = st.query_params.get("show_favorites", "") == "1"
 if 'applied_price_min' not in st.session_state:
     _p = st.query_params.get("price_min")
     st.session_state.applied_price_min = format_price_input(int(_p) if _p else None)
@@ -372,7 +372,7 @@ def filter_panel():
 
     if _filters_are_active and st.button("↺ Réinitialiser les filtres", use_container_width=True, key="fab_reset_filters"):
         keys_to_clear = [
-            'applied_search', 'applied_show_favorites',
+            'applied_search', 'applied_show_favorites',  # show_favorites also cleared from URL via st.query_params.clear() below
             'applied_price_min', 'applied_price_max',
             'applied_m2_min', 'applied_m2_max',
             'applied_sort_label', 'applied_selected_sites',
@@ -950,6 +950,7 @@ st.query_params.update({
     "m2_min":      str(m2_min) if m2_min else "",
     "m2_max":      str(m2_max) if m2_max else "",
     "sort":        sort_label,
+    "show_favorites": "1" if show_favorites else "",
     "favorites":   ",".join(str(x) for x in st.session_state.favorites),
     "page":        str(st.session_state.current_page),
 })
