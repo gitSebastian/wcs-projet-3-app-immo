@@ -212,6 +212,17 @@ if 'favorites' not in st.session_state:
 # captures the current state.
 st.query_params["favorites"] = ",".join(str(x) for x in st.session_state.favorites)
 
+# UI consolidation: maps display label -> list of raw DB property_type values.
+# DB stores granular types (loft, terrain, etc.) -- the UI groups them.
+# To change grouping: edit here only. Filtering logic reads this dict.
+PROPERTY_TYPE_GROUPS = {
+    "Appartements": ["appartement", "loft"],
+    "Maisons":      ["maison"],
+    "Parkings":     ["parking"],
+    "Autres":       ["commercial", "terrain", "autre"],
+}
+ALL_PROPERTY_TYPE_LABELS = list(PROPERTY_TYPE_GROUPS.keys())
+
 # Applied filter state — persists across dialog open/close cycles.
 # Initialised from URL params so bookmarked links still work on first load.
 if 'applied_search' not in st.session_state:
@@ -247,7 +258,12 @@ if 'applied_sort_label' not in st.session_state:
         url_sort = "Date (récent → ancien)"
     st.session_state.applied_sort_label = url_sort
 if 'applied_property_types' not in st.session_state:
-    st.session_state.applied_property_types = ["Appartements"]  # default: apartments only
+    _ptypes_param = st.query_params.get("property_types", "")
+    st.session_state.applied_property_types = (
+        [p for p in _ptypes_param.split(",") if p in ALL_PROPERTY_TYPE_LABELS]
+        if _ptypes_param
+        else ["Appartements"]  # default: apartments only
+    )
 if 'applied_selected_sites' not in st.session_state:
     st.session_state.applied_selected_sites = None  # None = not yet resolved; resolved after df loads
 if 'applied_date_min' not in st.session_state:
@@ -276,17 +292,6 @@ st.markdown(f"""
 # =============================================================
 
 float_init()  # required once at app startup
-
-# UI consolidation: maps display label -> list of raw DB property_type values.
-# DB stores granular types (loft, terrain, etc.) -- the UI groups them.
-# To change grouping: edit here only. Filtering logic reads this dict.
-PROPERTY_TYPE_GROUPS = {
-    "Appartements": ["appartement", "loft"],
-    "Maisons":      ["maison"],
-    "Parkings":     ["parking"],
-    "Autres":       ["commercial", "terrain", "autre"],
-}
-ALL_PROPERTY_TYPE_LABELS = list(PROPERTY_TYPE_GROUPS.keys())
 
 # ── Compute whether any filter is currently active (used to show Reset button) ──
 # Evaluated once per main-body render, captured by the filter_panel closure.
@@ -950,6 +955,7 @@ st.query_params.update({
     "m2_min":      str(m2_min) if m2_min else "",
     "m2_max":      str(m2_max) if m2_max else "",
     "sort":        sort_label,
+    "property_types": ",".join(st.session_state.applied_property_types or []),
     "show_favorites": "1" if show_favorites else "",
     "favorites":   ",".join(str(x) for x in st.session_state.favorites),
     "page":        str(st.session_state.current_page),
