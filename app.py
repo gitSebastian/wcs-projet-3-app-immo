@@ -315,7 +315,7 @@ _filters_are_active = any([
 # ── DEV_MODE: flag report dialog ────────────────────────────────
 # Opens from the flag button on each card. Writes one row to dedup_reports.
 # No matching or linking happens -- pure observation capture.
-@st.dialog("🚩 Signaler un doublon", width="small")
+@st.dialog("⚑ Signaler un doublon", width="small")
 def flag_report_dialog(row_id: int, row_title: str, row_site: str):
     st.markdown(f"**Annonce signalée:** `#{row_id}` · {row_site}")
     st.caption(row_title[:80] + ('…' if len(row_title) > 80 else ''))
@@ -342,13 +342,12 @@ def flag_report_dialog(row_id: int, row_title: str, row_site: str):
 
 
 # ── Filter dialog ──────────────────────────────────────────────
-@st.dialog("⚙️ Filtres", width="large")
+@st.dialog("⌂ Types", width="large")
 def filter_panel():
     # ------------------------------------------------------------------
     # Scope: Types
     # Not a filter -- Reset does not touch this section.
     # ------------------------------------------------------------------
-    st.markdown("##### Types")
     default_ptypes = (
         st.session_state.applied_property_types
         if st.session_state.applied_property_types is not None
@@ -369,9 +368,9 @@ def filter_panel():
     # ------------------------------------------------------------------
     # Filters
     # ------------------------------------------------------------------
-    st.markdown("##### Filtres")
+    st.markdown("## ⚙︎ Filtres")
 
-    if _filters_are_active and st.button("🔄 Réinitialiser les filtres", use_container_width=True, key="fab_reset_filters"):
+    if _filters_are_active and st.button("↺ Réinitialiser les filtres", use_container_width=True, key="fab_reset_filters"):
         keys_to_clear = [
             'applied_search', 'applied_show_favorites',
             'applied_price_min', 'applied_price_max',
@@ -390,7 +389,7 @@ def filter_panel():
     st.divider()
 
     search_term = st.text_input(
-        "🔎 Chercher par mot-clé",
+        "⌕ Chercher par mot-clé",
         value=st.session_state.applied_search,
         placeholder="Rechercher",
         key="search_term"
@@ -398,7 +397,7 @@ def filter_panel():
 
     st.divider()
 
-    show_favorites = st.checkbox("⭐ Favoris seulement", value=st.session_state.applied_show_favorites, key="show_favorites")
+    show_favorites = st.checkbox("♡ Favoris seulement", value=st.session_state.applied_show_favorites, key="show_favorites")
 
     st.divider()
 
@@ -412,20 +411,20 @@ def filter_panel():
     col1, col2 = st.columns(2)
     with col1:
         raw_price_min = st.text_input(
-        "💰 Prix min. (€)", value=default_price_min_str, placeholder="ex: 150 000", key="raw_price_min"
+        "Prix min. (€)", value=default_price_min_str, placeholder="ex: 150 000", key="raw_price_min"
         )
     with col2:
         raw_price_max = st.text_input(
-        "💰 Prix max. (€)", value=default_price_max_str, placeholder="ex: 400 000", key="raw_price_max"
+        "Prix max. (€)", value=default_price_max_str, placeholder="ex: 400 000", key="raw_price_max"
         )
 
     price_min = parse_price_input(raw_price_min)
     price_max = parse_price_input(raw_price_max)
 
     if raw_price_min.strip() and price_min is None:
-        st.caption("⚠️ Prix min. invalide")
+        st.caption("! Prix min. invalide")
     if raw_price_max.strip() and price_max is None:
-        st.caption("⚠️ Prix max. invalide")
+        st.caption("! Prix max. invalide")
 
     st.divider()
 
@@ -445,12 +444,12 @@ def filter_panel():
     col1, col2 = st.columns(2)
     with col1:
         m2_min = st.number_input(
-        "📏 Surface min. (m²)", min_value=0, max_value=max_m2, value=default_m2_min, step=5,
+        "Surface min. (m²)", min_value=0, max_value=max_m2, value=default_m2_min, step=5,
         placeholder="Pas de minimum", key="m2_min"
         )
     with col2:
         m2_max = st.number_input(
-        "📏 Surface max. (m²)", min_value=0, max_value=max_m2, value=default_m2_max, step=5,
+        "Surface max. (m²)", min_value=0, max_value=max_m2, value=default_m2_max, step=5,
         placeholder="Pas de maximum", key="m2_max"
         )
     
@@ -476,7 +475,7 @@ def filter_panel():
         current_sort_label = "Date (récent → ancien)"
     
     sort_label = st.selectbox(
-        "↕️ Trier par", 
+        "⇅ Trier par", 
         options=list(SORT_OPTIONS.keys()), 
         index=list(SORT_OPTIONS.keys()).index(current_sort_label),
         key="sort_label"
@@ -496,7 +495,7 @@ def filter_panel():
     else:
         default_sites = get_url_param_list('sites', available_sites)
 
-    st.markdown("🏢 **Sources**")
+    st.markdown("**Sources**")
     col_all, col_none = st.columns(2)
     with col_all:
         if st.button("✓ Tout", use_container_width=True, key="sites_select_all"):
@@ -539,7 +538,7 @@ def filter_panel():
     default_date_max = min(default_date_max, date_max_data)
 
     date_range = st.date_input(
-        "📅 Période", value=(default_date_min, default_date_max),
+        "Période", value=(default_date_min, default_date_max),
         min_value=date_min_data, max_value=date_max_data, format="DD/MM/YYYY", key="date_range"
     )
 
@@ -960,7 +959,7 @@ st.query_params.update({
 # =============================================================
 
 if not selected_sites:
-    st.warning("⚠️ Sélectionnez au moins une source")
+    st.warning("! Sélectionnez au moins une source")
     filtered_df = pd.DataFrame()
 else:
     filtered_df = df.copy()
@@ -1186,9 +1185,9 @@ else:
 
             # Build price bar.
             if price_m2_display:
-                price_block = f'<div class="card-price-container"><span>🏷️</span><span class="card-price">{price_display}</span><span class="card-price-m2">{price_m2_display}</span></div>'
+                price_block = f'<div class="card-price-container"><span class="card-price">{price_display}</span><span class="card-price-m2">{price_m2_display}</span></div>'
             else:
-                price_block = f'<div class="card-price-container"><span>🏷️</span><span class="card-price">{price_display}</span></div>'
+                price_block = f'<div class="card-price-container"><span class="card-price">{price_display}</span></div>'
 
             with col:
                 card_html = f"""
