@@ -309,7 +309,7 @@ _filters_are_active = any([
     set(_applied_sites) != set(_all_sites),
     _applied_date_min is not None and date.fromisoformat(_applied_date_min) > _date_min_data,
     _applied_date_max is not None and date.fromisoformat(_applied_date_max) < _date_max_data,
-    _applied_ptypes is not None and set(_applied_ptypes) != {"Appartements"},
+    # property_type is scope, not a filter -- intentionally excluded here
 ])
 
 # ── DEV_MODE: flag report dialog ────────────────────────────────
@@ -344,8 +344,33 @@ def flag_report_dialog(row_id: int, row_title: str, row_site: str):
 # ── Filter dialog ──────────────────────────────────────────────
 @st.dialog("⚙️ Filtres", width="large")
 def filter_panel():
-    # Reset all filters — only shown when something is active. Top of dialog
-    # so it's the first thing seen when opening with filters applied.
+    # ------------------------------------------------------------------
+    # Scope: Types
+    # Not a filter -- Reset does not touch this section.
+    # ------------------------------------------------------------------
+    st.markdown("##### Types")
+    default_ptypes = (
+        st.session_state.applied_property_types
+        if st.session_state.applied_property_types is not None
+        else ALL_PROPERTY_TYPE_LABELS
+    )
+    if 'property_types_multiselect' not in st.session_state:
+        st.session_state['property_types_multiselect'] = default_ptypes
+    selected_ptype_labels = st.multiselect(
+        "Types",
+        options=ALL_PROPERTY_TYPE_LABELS,
+        key='property_types_multiselect',
+        label_visibility='collapsed',
+        placeholder="Choisir les types",
+    )
+
+    st.divider()
+
+    # ------------------------------------------------------------------
+    # Filters
+    # ------------------------------------------------------------------
+    st.markdown("##### Filtres")
+
     if _filters_are_active and st.button("🔄 Réinitialiser les filtres", use_container_width=True, key="fab_reset_filters"):
         keys_to_clear = [
             'applied_search', 'applied_show_favorites',
@@ -353,8 +378,8 @@ def filter_panel():
             'applied_m2_min', 'applied_m2_max',
             'applied_sort_label', 'applied_selected_sites',
             'applied_date_min', 'applied_date_max',
-            'applied_property_types',
-            'current_page', 'sites_multiselect', 'property_types_multiselect',
+            'current_page', 'sites_multiselect',
+            # applied_property_types intentionally excluded -- scope, not a filter
         ]
         for k in keys_to_clear:
             if k in st.session_state:
@@ -457,30 +482,6 @@ def filter_panel():
         key="sort_label"
     )
     sort_col, sort_asc = SORT_OPTIONS[sort_label]
-
-    st.divider()
-
-    # ------------------------------------------------------------------
-    # Filtre Type de bien
-    # ------------------------------------------------------------------
-    # Widget uses consolidated display labels; Apply maps them back to
-    # raw DB values via PROPERTY_TYPE_GROUPS.
-    default_ptypes = (
-        st.session_state.applied_property_types
-        if st.session_state.applied_property_types is not None
-        else ALL_PROPERTY_TYPE_LABELS
-    )
-    if 'property_types_multiselect' not in st.session_state:
-        st.session_state['property_types_multiselect'] = default_ptypes
-
-    st.markdown("🏠 **Type de bien**")
-    selected_ptype_labels = st.multiselect(
-        "Type de bien",
-        options=ALL_PROPERTY_TYPE_LABELS,
-        key='property_types_multiselect',
-        label_visibility='collapsed',
-        placeholder="Choisir les types",
-    )
 
     st.divider()
 
