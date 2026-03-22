@@ -389,7 +389,7 @@ def filter_panel():
     st.divider()
 
     search_term = st.text_input(
-        "⌕ Chercher par mot-clé",
+        "Chercher par mot-clé",
         value=st.session_state.applied_search,
         placeholder="Rechercher",
         key="search_term"
@@ -397,7 +397,7 @@ def filter_panel():
 
     st.divider()
 
-    show_favorites = st.checkbox("♡ Favoris seulement", value=st.session_state.applied_show_favorites, key="show_favorites")
+    show_favorites = st.checkbox("\u2764\uFE0E Favoris seulement", value=st.session_state.applied_show_favorites, key="show_favorites")
 
     st.divider()
 
@@ -475,7 +475,7 @@ def filter_panel():
         current_sort_label = "Date (récent → ancien)"
     
     sort_label = st.selectbox(
-        "⇅ Trier par", 
+        "Trier par", 
         options=list(SORT_OPTIONS.keys()), 
         index=list(SORT_OPTIONS.keys()).index(current_sort_label),
         key="sort_label"
