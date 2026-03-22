@@ -306,6 +306,16 @@
 }
 
 /* =============================================================
+   MULTISELECT DROPDOWN
+   Cap list to ~4 items. Renders as a portal outside the dialog
+   DOM so must be a global rule, not scoped to stDialog.
+   ============================================================= */
+
+[data-baseweb="menu"] ul {
+    max-height: 160px !important;
+}
+
+/* =============================================================
    FILTERS DIALOG
    ============================================================= */
 
