@@ -269,6 +269,9 @@ if 'applied_property_types' not in st.session_state:
     )
 if 'applied_selected_sites' not in st.session_state:
     st.session_state.applied_selected_sites = None  # None = not yet resolved; resolved after df loads
+if 'applied_known_sites' not in st.session_state:
+    _ks = st.query_params.get("known_sites", "")
+    st.session_state.applied_known_sites = set(_ks.split(",")) if _ks else set()
 if 'applied_date_min' not in st.session_state:
     _d = st.query_params.get("date_min")
     st.session_state.applied_date_min = _d  # stored as ISO string or None
@@ -383,7 +386,7 @@ def filter_panel():
             'applied_search', 'applied_show_favorites',  # show_favorites also cleared from URL via st.query_params.clear() below
             'applied_price_min', 'applied_price_max',
             'applied_m2_min', 'applied_m2_max',
-            'applied_sort_label', 'applied_selected_sites',
+            'applied_sort_label', 'applied_selected_sites', 'applied_known_sites',
             'applied_date_min', 'applied_date_max',
             'current_page', 'sites_multiselect',
             # applied_property_types intentionally excluded -- scope, not a filter
@@ -572,6 +575,7 @@ def filter_panel():
         st.session_state.applied_m2_max           = m2_max
         st.session_state.applied_sort_label       = sort_label
         st.session_state.applied_selected_sites   = selected_sites
+        st.session_state.applied_known_sites        = set(available_sites)
         st.session_state.applied_date_min         = selected_date_min.isoformat()
         st.session_state.applied_date_max         = selected_date_max.isoformat()
         st.session_state.applied_property_types   = selected_ptype_labels
@@ -902,7 +906,13 @@ date_max_data    = df['scraped_date_dt'].max()
 if st.session_state.applied_selected_sites is None:
     selected_sites = get_url_param_list('sites', available_sites)
 else:
-    selected_sites = st.session_state.applied_selected_sites
+    # Auto-include any source added since the user last clicked Apply.
+    # applied_known_sites records what was available at Apply time.
+    # A source in available_sites but absent from applied_known_sites
+    # is new and must be force-selected regardless of applied_selected_sites.
+    new_since_apply = [s for s in available_sites
+                       if s not in st.session_state.applied_known_sites]
+    selected_sites = list(st.session_state.applied_selected_sites) + new_since_apply
 
 # Search
 search_term    = st.session_state.applied_search
