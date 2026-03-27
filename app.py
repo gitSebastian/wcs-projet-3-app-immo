@@ -641,7 +641,7 @@ with fab:
             style.textContent = `
                 #stt-btn {
                     position: fixed;
-                    bottom: 31rem;
+                    bottom: 33rem;
                     right: 0;
                     width: 66px;
                     height: 3.5rem;
@@ -699,7 +699,7 @@ with fab:
                 var fab = doc.querySelector('.st-key-fab_open_filters');
                 if (!fab) { setTimeout(fix, 50); return; }
                 fab.style.setProperty('position', 'fixed', 'important');
-                fab.style.setProperty('bottom', '27rem', 'important');
+                fab.style.setProperty('bottom', '29rem', 'important');
                 fab.style.setProperty('right', '0', 'important');
                 fab.style.setProperty('left', 'auto', 'important');
                 fab.style.setProperty('width', '66px', 'important');
