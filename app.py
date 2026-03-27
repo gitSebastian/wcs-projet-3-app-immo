@@ -4,7 +4,8 @@
 
 import streamlit as st
 import pandas as pd
-import psycopg2
+import pg8000.native
+import re as _re
 import base64
 import os
 import re
@@ -63,12 +64,25 @@ def load_svg_as_text(svg_path):
         return file.read()
 
 def load_data_from_db():
-    # Adding 'connect_timeout' helps identify if it's a network vs. protocol issue
-    conn = psycopg2.connect(DATABASE_URL, connect_timeout=10)
-    conn.autocommit = True
+    # pg8000: pure-Python postgres driver -- uses Python ssl, not libpq's bundled OpenSSL
+    # This avoids a recurring libpq TLS state corruption after long Mac uptime
+    m = _re.match(r'postgresql://([^:]+):([^@]+)@([^:]+):(\d+)/(\w+)', DATABASE_URL)
+    user, password, host, port, dbname = m.groups()
+    conn = pg8000.native.Connection(
+        user=user, password=password, host=host,
+        port=int(port), database=dbname,
+        ssl_context=True, timeout=10
+    )
     try:
         query = 'SELECT * FROM properties WHERE canonical_id IS NULL ORDER BY id DESC'
-        df = pd.read_sql_query(query, conn)
+        rows = conn.run(query)
+        columns = [desc['name'] for desc in conn.columns]
+        df = pd.DataFrame(rows, columns=columns)
+        # pg8000 returns Decimal for numeric columns; cast to float for downstream arithmetic
+        import decimal
+        for col in df.columns:
+            if df[col].apply(lambda x: isinstance(x, decimal.Decimal)).any():
+                df[col] = df[col].astype(float)
     finally:
         conn.close()
     return df
@@ -339,13 +353,17 @@ def flag_report_dialog(row_id: int, row_title: str, row_site: str):
     )
     if st.button("Envoyer le signalement", type="primary", use_container_width=True):
         try:
-            conn = psycopg2.connect(DATABASE_URL, connect_timeout=10)
-            conn.autocommit = True
-            with conn.cursor() as cur:
-                cur.execute(
-                    "INSERT INTO dedup_reports (id_a, site_a, notes) VALUES (%s, %s, %s)",
-                    (row_id, row_site, notes.strip() or None)
-                )
+            m = _re.match(r'postgresql://([^:]+):([^@]+)@([^:]+):(\d+)/(\w+)', DATABASE_URL)
+            _u, _pw, _h, _p, _db = m.groups()
+            conn = pg8000.native.Connection(
+                user=_u, password=_pw, host=_h,
+                port=int(_p), database=_db,
+                ssl_context=True, timeout=10
+            )
+            conn.run(
+                "INSERT INTO dedup_reports (id_a, site_a, notes) VALUES (:id_a, :site_a, :notes)",
+                id_a=row_id, site_a=row_site, notes=notes.strip() or None
+            )
             conn.close()
             st.success(f"Signalement enregistré pour #{row_id}")
         except Exception as e:
@@ -623,7 +641,7 @@ with fab:
             style.textContent = `
                 #stt-btn {
                     position: fixed;
-                    bottom: 13rem;
+                    bottom: 23rem;
                     right: 0;
                     width: 66px;
                     height: 3.5rem;
@@ -681,7 +699,7 @@ with fab:
                 var fab = doc.querySelector('.st-key-fab_open_filters');
                 if (!fab) { setTimeout(fix, 50); return; }
                 fab.style.setProperty('position', 'fixed', 'important');
-                fab.style.setProperty('bottom', '9rem', 'important');
+                fab.style.setProperty('bottom', '19rem', 'important');
                 fab.style.setProperty('right', '0', 'important');
                 fab.style.setProperty('left', 'auto', 'important');
                 fab.style.setProperty('width', '66px', 'important');
@@ -1165,14 +1183,19 @@ else:
     # DEV_MODE toolbar: shows dedup stats and link to review page.
     # Never rendered in production (DEV_MODE=false).
     if DEV_MODE:
-        conn = psycopg2.connect(DATABASE_URL, connect_timeout=10)
-        conn.autocommit = True
+        m = _re.match(r'postgresql://([^:]+):([^@]+)@([^:]+):(\d+)/(\w+)', DATABASE_URL)
+        _u, _pw, _h, _p, _db = m.groups()
+        _conn = pg8000.native.Connection(
+            user=_u, password=_pw, host=_h,
+            port=int(_p), database=_db,
+            ssl_context=True, timeout=10
+        )
         try:
-            _linked_count = pd.read_sql_query(
-                'SELECT COUNT(*) as n FROM properties WHERE canonical_id IS NOT NULL', conn
-            ).iloc[0]['n']
+            _linked_count = _conn.run(
+                'SELECT COUNT(*) as n FROM properties WHERE canonical_id IS NOT NULL'
+            )[0][0]
         finally:
-            conn.close()
+            _conn.close()
         st.markdown(
             f'<div class="dev-toolbar">'
             f'🛠 DEV · '
