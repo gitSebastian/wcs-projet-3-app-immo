@@ -355,7 +355,7 @@
 }
 
 .page-nav-bottom {
-    margin-top: 30px;
+    margin-top: 30px !important;
 }
 
 .nav-btn {
