@@ -10,14 +10,16 @@
 
 :root {
     /* Couleurs */
-    --bg-page: #1d1d1d;
+    --bg-page: #191919;
     --bg-sidebar: #191919;
     --bg-card: #232427;
     --bg-price: #252933;
     
     --text-white: #ffffff;
-    --text-gray: #999999;
-    --text-light: #b0b0b0;
+    --text-gray: #a6a6a6;
+    --text-light: #a6a6a6;
+    --accent-blue: #3a6dd9;
+    --border-cream: #a6a6a6;
     
     /* Fonts */
     --font-title: 'Montserrat', sans-serif;
@@ -115,28 +117,20 @@
 }
 
 .card {
-    background-color: var(--bg-card);
-    border-radius: var(--radius-card);
-    padding: 15px;
+    border: 1px solid var(--border-cream);
+    padding: 20px;
     height: 100%;
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
     margin-bottom: -20px;
-    transition: box-shadow 0.2s ease;
-}
-
-.card:hover {
-    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
 }
 
 .card-image {
     width: 100%;
     aspect-ratio: 4 / 3;
     object-fit: cover !important;
-    border-radius: var(--radius-small);
-    margin-bottom: 15px;
+    margin-bottom: 20px;
     display: block;
 }
 
@@ -149,6 +143,46 @@
     fill: var(--text-gray) !important;
 }
 
+.card-header {
+    display: flex;
+    align-items: stretch;
+    gap: 0;
+    margin-bottom: 20px;
+}
+
+.card-header-badge {
+    flex-shrink: 0;
+    width: 50px;
+    height: 50px;
+    background-color: var(--accent-blue);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-bottom: 1px solid var(--border-cream);
+}
+
+.card-header-badge svg {
+    height: 16px;
+    width: auto;
+}
+
+.card-header-badge svg path {
+    fill: #ffffff !important;
+}
+
+.card-header-meta {
+    color: var(--text-gray);
+    font-family: var(--font-body);
+    font-size: 14px;
+    line-height: 1.2;
+    padding-left: 15px;
+    border-bottom: 1px solid var(--border-cream);
+    flex: 1;
+    display: flex;
+    align-items: center;
+}
+
+/* Legacy .card-meta kept for any other usages */
 .card-meta {
     display: flex;
     align-items: flex-end;
@@ -165,7 +199,7 @@
     font-family: var(--font-title);
     font-size: 18px;
     font-weight: 500;
-    margin-bottom: 15px;
+    margin-bottom: 14px;
     line-height: 1.3;
 }
 
@@ -173,12 +207,65 @@
     color: var(--text-light);
     font-family: var(--font-body);
     font-size: 14px;
-    margin-bottom: 25px;
+    margin-bottom: 20px;
     flex: 1;
     overflow-y: auto;
     line-height: 1.5;
 }
 
+/* Price row: Prix: | amount | separator | m²/price
+   Built as a flex row with 1px vertical separators between cells.
+   The fav button is absolutely positioned into this row by the existing CSS. */
+.card-price-row {
+    display: flex;
+    align-items: stretch;
+    border-top: 1px solid var(--border-cream);
+    margin-top: auto;
+    min-height: 50px;
+}
+
+.card-price-label {
+    color: var(--text-white);
+    font-family: var(--font-title);
+    font-size: 15px;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    padding: 0 16px 0 0;
+    white-space: nowrap;
+}
+
+.card-price-sep {
+    width: 1px;
+    background-color: var(--border-cream);
+    align-self: stretch;
+    flex-shrink: 0;
+}
+
+.card-price-amount {
+    color: var(--text-white);
+    font-family: var(--font-title);
+    font-size: 15px;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    padding: 0 16px 0 0;
+    white-space: nowrap;
+}
+
+.card-price-m2 {
+    color: var(--text-white);
+    font-family: var(--font-title);
+    font-size: 15px;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    white-space: nowrap;
+    flex: 1;
+}
+
+/* Legacy container kept in case it's referenced elsewhere */
 .card-price-container {
     background-color: var(--bg-price);
     border-radius: var(--radius-small);
@@ -194,13 +281,6 @@
     font-family: var(--font-title);
     font-size: 18px;
     font-weight: 500;
-}
-
-.card-price-m2 {
-    color: var(--text-gray);
-    font-family: var(--font-body);
-    font-size: 14px;
-    margin-left: 10px;  /* pushes it to the right end of the price bar */
 }
 
 /* =============================================================
@@ -225,6 +305,10 @@
     display: block !important;
 }
 
+[class*="st-key-fav_"] button p {
+    font-size: 18px !important;
+}
+
 /* Zero out the layout footprint of the fav button container.
    The button is position:absolute so it doesn't need flow space.
    Without this, Streamlit gives the stElementContainer minimum height
@@ -239,16 +323,20 @@
 
 [class*="st-key-fav_"] [data-testid="stBaseButton-secondary"] {
     position: absolute !important;
-    bottom: 21px !important;
+    /* bottom injected per-render via heart_styles in app.py -- DEV_MODE offsets it */
     right: 20px !important;
     top: auto !important;
     z-index: 1000 !important;
-    width: auto !important;
-    background: rgba(0, 0, 0, 0.0) !important;
-    border-radius: var(--radius-small) !important;
-    border: none !important;
-    font-size: 20px !important;
-    padding: 0 16px !important;
+    width: 50px !important;
+    height: 50px !important;
+    background: transparent !important;
+    border-radius: 0 !important;
+    border: 1px solid var(--border-cream) !important;
+    font-size: 18px !important;
+    padding: 0 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
 }
 
 
@@ -277,8 +365,7 @@
     text-decoration: none !important;
     white-space: nowrap;
     padding: 0.4rem 1rem;
-    border: 1px solid #444;
-    border-radius: var(--radius-small);
+    border: 1px solid white;
     transition: background 0.15s ease;
 }
 
@@ -287,8 +374,6 @@
 }
 
 .nav-btn-edge {
-    padding-left: 0.6rem !important;
-    padding-right: 0.6rem !important;
     font-size: 16px;
 }
 

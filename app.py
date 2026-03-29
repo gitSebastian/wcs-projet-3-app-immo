@@ -96,7 +96,7 @@ def format_price(price):
 def format_price_per_m2(price_per_m2):
     """Formate le prix au m² pour l'affichage sur les cartes"""
     if pd.notna(price_per_m2) and price_per_m2 > 0:
-        return f"({int(round(price_per_m2)):,} €/m²)".replace(",", " ")
+        return f"{int(round(price_per_m2)):,} €/m²".replace(",", " ")
     return None
 
 def parse_price_input(raw: str) -> int | None:
@@ -191,6 +191,11 @@ logo_base64 = image_to_base64(LOGO_PATH)
 
 # For card logos (inline SVG)
 logo_svg_text = load_svg_as_text(LOGO_PATH)
+
+# No-image placeholder: base64 SVG used as onerror fallback on card <img> tags
+NO_IMAGE_PATH = IMAGES_FOLDER / "no-image.svg"
+no_image_base64 = image_to_base64(NO_IMAGE_PATH)
+no_image_data_uri = f"data:image/svg+xml;base64,{no_image_base64}"
 
 # Données (cache de 10 minutes)
 DEV_MODE = os.environ.get("DEV_MODE", "false").lower() == "true"
@@ -1094,6 +1099,17 @@ else:
 # UI - STATISTIQUES ON TOP
 # =============================================================
 
+# Last scrape hour: max created_at among rows that share the most recent scraped_date.
+# created_at is a datetime; extract HH:MM in Paris local time for display.
+_last_date = df['scraped_date'].max()
+_last_ts = pd.to_datetime(df.loc[df['scraped_date'] == _last_date, 'created_at']).max()
+try:
+    import zoneinfo
+    _paris = zoneinfo.ZoneInfo('Europe/Paris')
+    _last_hour = _last_ts.tz_localize('UTC').astimezone(_paris).strftime('%Hh%M')
+except Exception:
+    _last_hour = _last_ts.strftime('%Hh%M')  # fallback: UTC, better than nothing
+
 st.markdown(f"""
     <div class="stats-container">
         <div class="stat-item">
@@ -1104,9 +1120,12 @@ st.markdown(f"""
             <p class="stat-label">Agences:</p>
             <p class="stat-value">{filtered_df['site'].nunique()} / {df['site'].nunique()}</p>
         </div>
+    </div>
+        <br>
+    <div class="stats-container">
         <div class="stat-item">
             <p class="stat-label">Mis à jour:</p>
-            <p class="stat-value">{df['scraped_date'].max()}</p>
+            <p class="stat-value">{_last_date} · {_last_hour}</p>
         </div>
     </div>
 """, unsafe_allow_html=True)
@@ -1148,9 +1167,9 @@ else:
     st.markdown(f"""
         <div class="page-nav">
             <a href="{first_url}" class="nav-btn nav-btn-edge" {first_attr} target="_self">&#8676;</a>
-            <a href="{prev_url}" class="nav-btn" {prev_attr} target="_self">&#8592; Pr&#233;c.</a>
+            <a href="{prev_url}" class="nav-btn" {prev_attr} target="_self">Pr&#233;c.</a>
             <span class="nav-label">{current_page + 1} / {total_pages}</span>
-            <a href="{next_url}" class="nav-btn" {next_attr} target="_self">Suiv. &#8594;</a>
+            <a href="{next_url}" class="nav-btn" {next_attr} target="_self">Suiv.</a>
             <a href="{last_url}" class="nav-btn nav-btn-edge" {last_attr} target="_self">&#8677;</a>
         </div>
     """, unsafe_allow_html=True)
@@ -1207,8 +1226,25 @@ else:
 
     # Inject all heart color rules in a single st.markdown call to avoid
     # per-card empty stMarkdownContainer elements that create row gaps.
+    _fav_bottom = '37px' if DEV_MODE else '21px'  # DEV_MODE adds flag button below, shifting the card anchor
     heart_styles = ''.join(
-        f".st-key-fav_{row['id']} button p {{ color: {'#10B981' if row['id'] in st.session_state.favorites else 'var(--text-gray)'} !important; font-size: 1.6rem !important; }}"
+        (
+            f".st-key-fav_{row['id']} [data-testid='stBaseButton-secondary'] {{"
+            f" bottom: {_fav_bottom} !important;"
+            f" background: {'#10B981' if row['id'] in st.session_state.favorites else 'transparent'} !important;"
+            f" border-color: {'#10B981' if row['id'] in st.session_state.favorites else 'var(--border-cream)'} !important; }}"
+            # Always the same filled glyph (U+2665). Unfavorited: knock fill to transparent,
+            # draw outline via -webkit-text-stroke. Same path = identical optical size.
+            + (f".st-key-fav_{row['id']} button p {{"
+               f" color: #ffffff !important;"
+               f" -webkit-text-stroke: 0 !important;"
+               f" font-size: 1.4rem !important; }}"
+               if row['id'] in st.session_state.favorites else
+               f".st-key-fav_{row['id']} button p {{"
+               f" color: transparent !important;"
+               f" -webkit-text-stroke: 1px #ffffff !important;"
+               f" font-size: 1.4rem !important; }}")
+        )
         for _, row in page_df.iterrows()
     )
     st.markdown(f'<style>{heart_styles}</style>', unsafe_allow_html=True)
@@ -1239,22 +1275,34 @@ else:
             is_favorited = row['id'] in st.session_state.favorites
             button_key = f"fav_{row['id']}"
 
-            # Build price bar.
+            # Build price row: Prix: | amount | sep | m²/price
+            # Vertical separators are .card-price-sep divs (1px cream lines).
+            # The fav button is absolutely positioned into this row by CSS -- no slot reserved here.
             if price_m2_display:
-                price_block = f'<div class="card-price-container"><span class="card-price">{price_display}</span><span class="card-price-m2">{price_m2_display}</span></div>'
+                price_block = (
+                    f'<div class="card-price-row">'
+                    f'<span class="card-price-amount">{price_display}</span>'
+                    f'<div class="card-price-sep"></div>'
+                    f'<span class="card-price-m2">{price_m2_display}</span>'
+                    f'</div>'
+                )
             else:
-                price_block = f'<div class="card-price-container"><span class="card-price">{price_display}</span></div>'
+                price_block = (
+                    f'<div class="card-price-row">'
+                    f'<span class="card-price-amount">{price_display}</span>'
+                    f'</div>'
+                )
 
             with col:
                 card_html = f"""
                 <div class="card-wrapper">
                     <div class="card">
                         <a href="{row['live_url'] or row['url']}" target="_blank" class="card-link">
-                            <img src="{row['image_url']}" class="card-image" alt="Photo">
+                            <img src="{row['image_url'] if row['image_url'] and row['image_url'].startswith('http') else no_image_data_uri}" class="card-image" alt="Photo">
                         </a>
-                        <div class="card-meta">
-                            <div class="card-logo-wrapper">{logo_svg_text}</div>
-                            <div class="card-meta-text">{row['site']} · {row['scraped_date']}{' · <span class="dev-id">#' + str(row['id']) + '</span>' if DEV_MODE else ''}</div>
+                        <div class="card-header">
+                            <div class="card-header-badge">{logo_svg_text}</div>
+                            <div class="card-header-meta">{row['site']}</br>{row['scraped_date']}{' · #' + str(row['id']) if DEV_MODE else ''}</div>
                         </div>
                         <a href="{row['live_url'] or row['url']}" target="_blank" class="card-link">
                             <div class="card-title">{title}</div>
@@ -1299,9 +1347,9 @@ else:
     st.markdown(f"""
         <div class="page-nav page-nav-bottom">
             <a href="{first_url}" class="nav-btn nav-btn-edge" {first_attr} target="_self">&#8676;</a>
-            <a href="{prev_url}" class="nav-btn" {prev_attr} target="_self">&#8592; Pr&#233;c.</a>
+            <a href="{prev_url}" class="nav-btn" {prev_attr} target="_self">Pr&#233;c.</a>
             <span class="nav-label">{current_page + 1} / {total_pages}</span>
-            <a href="{next_url}" class="nav-btn" {next_attr} target="_self">Suiv. &#8594;</a>
+            <a href="{next_url}" class="nav-btn" {next_attr} target="_self">Suiv.</a>
             <a href="{last_url}" class="nav-btn nav-btn-edge" {last_attr} target="_self">&#8677;</a>
         </div>
     """, unsafe_allow_html=True)
