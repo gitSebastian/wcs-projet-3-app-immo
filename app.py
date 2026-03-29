@@ -1270,7 +1270,7 @@ else:
 
             # Description : tronquer à 100 caractères
             raw_desc = row['description'] if pd.notna(row['description']) else ''
-            description = (raw_desc[:100] + '…') if len(raw_desc) > 100 else (raw_desc or 'Pas de description')
+            description = (raw_desc[:150] + '…') if len(raw_desc) > 150 else (raw_desc or 'Pas de description')
 
             is_favorited = row['id'] in st.session_state.favorites
             button_key = f"fav_{row['id']}"
