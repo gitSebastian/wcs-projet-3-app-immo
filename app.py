@@ -1284,6 +1284,7 @@ else:
             # price_history is [{price, date}, ...] oldest first.
             ph = row.get('price_history')
             ph = ph if (ph and isinstance(ph, list)) else []
+            sq = row.get('square_meters')  # used to compute per-entry m2 price
             if ph:
                 prev_price = ph[-1].get('price')
                 if prev_price is not None and row['price_numeric'] is not None:
@@ -1291,39 +1292,48 @@ else:
                         p_color, p_arrow = '#10B981', '&#8595;'  # green, down
                     else:
                         p_color, p_arrow = '#ef4444', '&#8593;'  # red, up
-                    amount_html = (
-                        f'<span style="color:{p_color}">{p_arrow} {price_display}</span>'
-                    )
+                    amount_html = f'<span style="color:{p_color}">{p_arrow} {price_display}</span>'
                 else:
                     amount_html = price_display
-                # History line: all prior prices oldest-first
-                parts = [f"{format_price(e['price'])} ({e.get('date','')})" for e in ph if e.get('price')]
-                history_line = (
-                    f'<div class="card-price-history">' +
-                    ' → '.join(parts) +
+                # One line per history entry: price - m2/price - date
+                entry_lines = []
+                for e in ph:
+                    ep = e.get('price')
+                    if ep is None:
+                        continue
+                    ed = e.get('date', '')
+                    em2 = (f' - {int(round(ep / sq)):,} €/m²'.replace(',', ' '))\
+                          if (sq and sq > 0) else ''
+                    entry_lines.append(
+                        f'<span class="card-price-history-entry">{format_price(ep)}{em2} - {ed}</span>'
+                    )
+                history_section = (
+                    f'<div class="card-price-history">'
+                    f'<span class="card-price-history-label">Evolution du prix:</span>'
+                    + ''.join(entry_lines) +
                     f'</div>'
                 )
             else:
-                amount_html  = price_display
-                history_line = ''
+                amount_html     = price_display
+                history_section = ''
 
-            # Build price row: amount | sep | m²/price
-            # The fav button is absolutely positioned into this row by CSS.
+            # Build price block: optional history section above, price row at bottom.
+            # The fav button is absolutely positioned into the price row by CSS.
             if price_m2_display:
                 price_block = (
+                    f'{history_section}'
                     f'<div class="card-price-row">'
                     f'<span class="card-price-amount">{amount_html}</span>'
                     f'<div class="card-price-sep"></div>'
                     f'<span class="card-price-m2">{price_m2_display}</span>'
                     f'</div>'
-                    f'{history_line}'
                 )
             else:
                 price_block = (
+                    f'{history_section}'
                     f'<div class="card-price-row">'
                     f'<span class="card-price-amount">{amount_html}</span>'
                     f'</div>'
-                    f'{history_line}'
                 )
 
             with col:
@@ -1335,7 +1345,7 @@ else:
                         </a>
                         <div class="card-header">
                             <div class="card-header-badge">{logo_svg_text}</div>
-                            <div class="card-header-meta">{row['site']}</br>{row['scraped_date']}{' · #' + str(row['id']) if DEV_MODE else ''}</div>
+                            <div class="card-header-meta">{row['site'] if agency_filter else f'<a href="?{urlencode({**dict(st.query_params), "agency": row["site"]})}" class="agency-filter-link" target="_self">{row["site"]}</a>'}</br>{row['scraped_date']}{' · #' + str(row['id']) if DEV_MODE else ''}</div>
                         </div>
                         <a href="{row['live_url'] or row['url']}" target="_blank" class="card-link">
                             <div class="card-title">{title}</div>
@@ -1376,13 +1386,14 @@ else:
         </script>
     """, height=0)
 
-    # Nav bar (bottom)
-    st.markdown(f"""
-        <div class="page-nav page-nav-bottom">
-            <a href="{first_url}" class="nav-btn nav-btn-edge" {first_attr} target="_self">&#8676;</a>
-            <a href="{prev_url}" class="nav-btn" {prev_attr} target="_self">Pr&#233;c.</a>
-            <span class="nav-label">{current_page + 1} / {total_pages}</span>
-            <a href="{next_url}" class="nav-btn" {next_attr} target="_self">Suiv.</a>
-            <a href="{last_url}" class="nav-btn nav-btn-edge" {last_attr} target="_self">&#8677;</a>
-        </div>
-    """, unsafe_allow_html=True)
+    # Nav bar (bottom) -- suppressed in agency overlay mode
+    if not agency_filter:
+        st.markdown(f"""
+            <div class="page-nav page-nav-bottom">
+                <a href="{first_url}" class="nav-btn nav-btn-edge" {first_attr} target="_self">&#8676;</a>
+                <a href="{prev_url}" class="nav-btn" {prev_attr} target="_self">Pr&#233;c.</a>
+                <span class="nav-label">{current_page + 1} / {total_pages}</span>
+                <a href="{next_url}" class="nav-btn" {next_attr} target="_self">Suiv.</a>
+                <a href="{last_url}" class="nav-btn nav-btn-edge" {last_attr} target="_self">&#8677;</a>
+            </div>
+        """, unsafe_allow_html=True)

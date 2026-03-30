@@ -265,6 +265,37 @@
     flex: 1;
 }
 
+/* Price history section: shown above the price row when history exists.
+   Has its own top separator; the price row's border-top closes it at the bottom. */
+.card-price-history {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    border-top: 1px solid var(--border-cream);
+    padding: 20px 0 20px 0;
+    margin-top: auto;  /* pushes history+price block to card bottom */
+}
+
+/* When history is present, it carries margin-top:auto so the price row doesn't need it */
+.card-price-history + .card-price-row {
+    margin-top: 0;
+}
+
+.card-price-history-label {
+    color: var(--text-white);
+    font-family: var(--font-title);
+    font-size: 14px;
+    margin-bottom: 2px;
+}
+
+.card-price-history-entry {
+    color: var(--text-gray);
+    font-family: var(--font-body);
+    font-size: 14px;
+    line-height: 1.4;
+    display: block;
+}
+
 /* Legacy container kept in case it's referenced elsewhere */
 .card-price-container {
     background-color: var(--bg-price);
