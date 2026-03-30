@@ -356,6 +356,7 @@
 
 .page-nav-bottom {
     margin-top: 30px !important;
+    margin-bottom: 200px;
 }
 
 .nav-btn {
@@ -418,7 +419,7 @@
 [data-testid="stLayoutWrapper"]:has(.st-key-fab_open_filters),
 [data-testid="stVerticalBlock"]:has(.st-key-fab_open_filters) {
     height: 0 !important;
-    gap: 0 !important;
+    gap: 1rem !important;
     overflow: visible !important;
 }
 
@@ -516,7 +517,7 @@ div[data-testid="stDialog"] div[role="dialog"] {
     border: 1px solid #374151;
     border-radius: 6px;
     padding: 6px 12px;
-    margin: 0 0 40px 0;
+    margin: 30px 0 0px 0;
     font-size: 0.8rem;
     color: #9ca3af;
 }
