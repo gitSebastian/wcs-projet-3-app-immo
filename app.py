@@ -307,6 +307,11 @@ if 'current_page' not in st.session_state:
     _pg = st.query_params.get("page", "0")
     st.session_state.current_page = int(_pg) if _pg.isdigit() else 0
 
+# Agency overlay: ephemeral param that narrows the view to one site without
+# touching the real source filter. Not stored in session state -- read fresh
+# from URL on every render so the × dismiss link works as a plain <a href>.
+agency_filter = st.query_params.get("agency", "")
+
 # =============================================================
 # HEADER - Logo
 # =============================================================
@@ -1001,6 +1006,7 @@ st.query_params.update({
     "show_favorites": "1" if show_favorites else "",
     "favorites":   ",".join(str(x) for x in st.session_state.favorites),
     "page":        str(st.session_state.current_page),
+    "agency":      agency_filter,
 })
 
 # =============================================================
@@ -1078,6 +1084,10 @@ else:
                 filtered_df['property_type'].isin(_raw_types) |
                 (filtered_df['property_type'].isna())
             ]
+
+    # Filtrer par agence (overlay -- ephemeral, does not touch applied_selected_sites)
+    if agency_filter:
+        filtered_df = filtered_df[filtered_df['site'] == agency_filter]
 
     # Filtrer par favoris
     if show_favorites:
@@ -1173,37 +1183,45 @@ if len(filtered_df) == 0:
     else:
         st.info("Aucune annonce avec ces filtres")
 else:
-    # Pagination
-    unique_dates = sorted(filtered_df['scraped_date_dt'].unique(), reverse=True)
-    total_pages  = max(1, len(unique_dates))
-    current_page = min(st.session_state.current_page, total_pages - 1)  # clamp after filter
-    page_df      = filtered_df[filtered_df['scraped_date_dt'] == unique_dates[current_page]] if unique_dates else filtered_df.iloc[0:0]
+    # Pagination -- bypassed in agency overlay mode (flat list, all listings).
+    # When agency_filter is active: page_df = full filtered set, no nav bars rendered.
+    if agency_filter:
+        page_df      = filtered_df
+        current_page = 0
+        total_pages  = 1
+        first_url = prev_url = next_url = last_url = ''
+        first_attr = prev_attr = next_attr = last_attr = 'aria-disabled="true"'
+    else:
+        unique_dates = sorted(filtered_df['scraped_date_dt'].unique(), reverse=True)
+        total_pages  = max(1, len(unique_dates))
+        current_page = min(st.session_state.current_page, total_pages - 1)  # clamp after filter
+        page_df      = filtered_df[filtered_df['scraped_date_dt'] == unique_dates[current_page]] if unique_dates else filtered_df.iloc[0:0]
 
-    # Nav bar — pure HTML links, no st.columns needed
-    def _nav_url(p):
-        """Build a URL for page p preserving all current query params."""
-        params = dict(st.query_params)
-        params['page'] = str(p)
-        return '?' + urlencode(params)
+        # Nav bar — pure HTML links, no st.columns needed
+        def _nav_url(p):
+            """Build a URL for page p preserving all current query params."""
+            params = dict(st.query_params)
+            params['page'] = str(p)
+            return '?' + urlencode(params)
 
-    prev_url  = _nav_url(current_page - 1)
-    next_url  = _nav_url(current_page + 1)
-    first_url = _nav_url(0)
-    last_url  = _nav_url(total_pages - 1)
-    prev_attr  = '' if current_page > 0 else 'aria-disabled="true"'
-    next_attr  = '' if current_page < total_pages - 1 else 'aria-disabled="true"'
-    first_attr = '' if current_page > 0 else 'aria-disabled="true"'
-    last_attr  = '' if current_page < total_pages - 1 else 'aria-disabled="true"'
+        prev_url  = _nav_url(current_page - 1)
+        next_url  = _nav_url(current_page + 1)
+        first_url = _nav_url(0)
+        last_url  = _nav_url(total_pages - 1)
+        prev_attr  = '' if current_page > 0 else 'aria-disabled="true"'
+        next_attr  = '' if current_page < total_pages - 1 else 'aria-disabled="true"'
+        first_attr = '' if current_page > 0 else 'aria-disabled="true"'
+        last_attr  = '' if current_page < total_pages - 1 else 'aria-disabled="true"'
 
-    st.markdown(f"""
-        <div class="page-nav">
-            <a href="{first_url}" class="nav-btn nav-btn-edge" {first_attr} target="_self">&#8676;</a>
-            <a href="{prev_url}" class="nav-btn" {prev_attr} target="_self">Pr&#233;c.</a>
-            <span class="nav-label">{current_page + 1} / {total_pages}</span>
-            <a href="{next_url}" class="nav-btn" {next_attr} target="_self">Suiv.</a>
-            <a href="{last_url}" class="nav-btn nav-btn-edge" {last_attr} target="_self">&#8677;</a>
-        </div>
-    """, unsafe_allow_html=True)
+        st.markdown(f"""
+            <div class="page-nav">
+                <a href="{first_url}" class="nav-btn nav-btn-edge" {first_attr} target="_self">&#8676;</a>
+                <a href="{prev_url}" class="nav-btn" {prev_attr} target="_self">Pr&#233;c.</a>
+                <span class="nav-label">{current_page + 1} / {total_pages}</span>
+                <a href="{next_url}" class="nav-btn" {next_attr} target="_self">Suiv.</a>
+                <a href="{last_url}" class="nav-btn nav-btn-edge" {last_attr} target="_self">&#8677;</a>
+            </div>
+        """, unsafe_allow_html=True)
 
     # Scroll-to-top on page/filter navigation. Not fired on st.button reruns
     # because those don't cause DOM mutations in stMain -- Streamlit does a
@@ -1253,6 +1271,22 @@ else:
         for _, row in page_df.iterrows()
     )
     st.markdown(f'<style>{heart_styles}</style>', unsafe_allow_html=True)
+
+    # Agency overlay banner -- shown only when ?agency= is active.
+    # × is a plain <a href> that drops agency from current params and
+    # returns to the exact same page, filters untouched.
+    if agency_filter:
+        _dismiss_params = {k: v for k, v in st.query_params.items() if k != 'agency'}
+        _dismiss_url = '?' + urlencode(_dismiss_params) if _dismiss_params else '?'
+        _agency_count = len(filtered_df)
+        st.markdown(
+            f'<div class="agency-banner">'
+            f'<span class="agency-banner-name">{agency_filter}</span>'
+            f'<span class="agency-banner-count">{_agency_count} annonce{"s" if _agency_count != 1 else ""}</span>'
+            f'<a href="{_dismiss_url}" class="agency-banner-dismiss" target="_self">&#x2715;</a>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
 
     # Afficher les cartes, row-by-row (3 per row) to avoid empty column gaps on last row
     for chunk_start in range(0, len(page_df), 3):
@@ -1345,7 +1379,7 @@ else:
                         </a>
                         <div class="card-header">
                             <div class="card-header-badge">{logo_svg_text}</div>
-                            <div class="card-header-meta">{row['site'] if agency_filter else f'<a href="?{urlencode({**dict(st.query_params), "agency": row["site"]})}" class="agency-filter-link" target="_self">{row["site"]}</a>'}</br>{row['scraped_date']}{' · #' + str(row['id']) if DEV_MODE else ''}</div>
+                            <div class="card-header-meta">{f'{row["site"]}<br>' if agency_filter else f'<a href="?{urlencode({**dict(st.query_params), "agency": row["site"]})}" class="agency-filter-link" target="_self">{row["site"]}</a>'}{row['scraped_date']}{' · #' + str(row['id']) if DEV_MODE else ''}</div>
                         </div>
                         <a href="{row['live_url'] or row['url']}" target="_blank" class="card-link">
                             <div class="card-title">{title}</div>
