@@ -83,6 +83,12 @@ def load_data_from_db():
         for col in df.columns:
             if df[col].apply(lambda x: isinstance(x, decimal.Decimal)).any():
                 df[col] = df[col].astype(float)
+        # pg8000 returns JSONB as a string; parse price_history into Python lists
+        import json as _json
+        if 'price_history' in df.columns:
+            df['price_history'] = df['price_history'].apply(
+                lambda x: _json.loads(x) if isinstance(x, str) else x
+            )
     finally:
         conn.close()
     return df
@@ -983,8 +989,8 @@ selected_date_max = min(selected_date_max, date_max_data)
 st.query_params.update({
     "sites":       ",".join(selected_sites),
     "known_sites": ",".join(available_sites),
-    "date_min":    selected_date_min.isoformat(),
-    "date_max":    selected_date_max.isoformat(),
+    "date_min":    selected_date_min.isoformat() if selected_date_min > date_min_data else "",
+    "date_max":    selected_date_max.isoformat() if selected_date_max < date_max_data else "",
     "search":      search_term,
     "price_min":   str(price_min) if price_min is not None else "",
     "price_max":   str(price_max) if price_max is not None else "",
@@ -1130,6 +1136,31 @@ st.markdown(f"""
     </div>
 """, unsafe_allow_html=True)
 
+# DEV_MODE toolbar: shows dedup stats and link to review page.
+# Never rendered in production (DEV_MODE=false).
+if DEV_MODE:
+    m = _re.match(r'postgresql://([^:]+):([^@]+)@([^:]+):(\d+)/(\w+)', DATABASE_URL)
+    _u, _pw, _h, _p, _db = m.groups()
+    _conn = pg8000.native.Connection(
+        user=_u, password=_pw, host=_h,
+        port=int(_p), database=_db,
+        ssl_context=True, timeout=10
+    )
+    try:
+        _linked_count = _conn.run(
+            'SELECT COUNT(*) as n FROM properties WHERE canonical_id IS NOT NULL'
+        )[0][0]
+    finally:
+        _conn.close()
+    st.markdown(
+        f'<div class="dev-toolbar">'
+        f'🛠 DEV · '
+        f'<b>{_linked_count}</b> doublons masqués '
+        f'· <a href="/dedup_review" target="_self">Voir les paires →</a>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
 st.divider()
 
 # =============================================================
@@ -1198,32 +1229,6 @@ else:
         </script>
     """, height=0)
 
-
-    # DEV_MODE toolbar: shows dedup stats and link to review page.
-    # Never rendered in production (DEV_MODE=false).
-    if DEV_MODE:
-        m = _re.match(r'postgresql://([^:]+):([^@]+)@([^:]+):(\d+)/(\w+)', DATABASE_URL)
-        _u, _pw, _h, _p, _db = m.groups()
-        _conn = pg8000.native.Connection(
-            user=_u, password=_pw, host=_h,
-            port=int(_p), database=_db,
-            ssl_context=True, timeout=10
-        )
-        try:
-            _linked_count = _conn.run(
-                'SELECT COUNT(*) as n FROM properties WHERE canonical_id IS NOT NULL'
-            )[0][0]
-        finally:
-            _conn.close()
-        st.markdown(
-            f'<div class="dev-toolbar">'
-            f'🛠 DEV · '
-            f'<b>{_linked_count}</b> doublons masqués '
-            f'· <a href="/dedup_review" target="_self">Voir les paires →</a>'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
-
     # Inject all heart color rules in a single st.markdown call to avoid
     # per-card empty stMarkdownContainer elements that create row gaps.
     _fav_bottom = '37px' if DEV_MODE else '21px'  # DEV_MODE adds flag button below, shifting the card anchor
@@ -1275,22 +1280,50 @@ else:
             is_favorited = row['id'] in st.session_state.favorites
             button_key = f"fav_{row['id']}"
 
-            # Build price row: Prix: | amount | sep | m²/price
-            # Vertical separators are .card-price-sep divs (1px cream lines).
-            # The fav button is absolutely positioned into this row by CSS -- no slot reserved here.
+            # Price history: derive change signal from price_history JSONB.
+            # price_history is [{price, date}, ...] oldest first.
+            ph = row.get('price_history')
+            ph = ph if (ph and isinstance(ph, list)) else []
+            if ph:
+                prev_price = ph[-1].get('price')
+                if prev_price is not None and row['price_numeric'] is not None:
+                    if row['price_numeric'] < prev_price:
+                        p_color, p_arrow = '#10B981', '&#8595;'  # green, down
+                    else:
+                        p_color, p_arrow = '#ef4444', '&#8593;'  # red, up
+                    amount_html = (
+                        f'<span style="color:{p_color}">{p_arrow} {price_display}</span>'
+                    )
+                else:
+                    amount_html = price_display
+                # History line: all prior prices oldest-first
+                parts = [f"{format_price(e['price'])} ({e.get('date','')})" for e in ph if e.get('price')]
+                history_line = (
+                    f'<div class="card-price-history">' +
+                    ' → '.join(parts) +
+                    f'</div>'
+                )
+            else:
+                amount_html  = price_display
+                history_line = ''
+
+            # Build price row: amount | sep | m²/price
+            # The fav button is absolutely positioned into this row by CSS.
             if price_m2_display:
                 price_block = (
                     f'<div class="card-price-row">'
-                    f'<span class="card-price-amount">{price_display}</span>'
+                    f'<span class="card-price-amount">{amount_html}</span>'
                     f'<div class="card-price-sep"></div>'
                     f'<span class="card-price-m2">{price_m2_display}</span>'
                     f'</div>'
+                    f'{history_line}'
                 )
             else:
                 price_block = (
                     f'<div class="card-price-row">'
-                    f'<span class="card-price-amount">{price_display}</span>'
+                    f'<span class="card-price-amount">{amount_html}</span>'
                     f'</div>'
+                    f'{history_line}'
                 )
 
             with col:
