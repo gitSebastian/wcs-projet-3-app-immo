@@ -299,10 +299,10 @@ if 'applied_known_sites' not in st.session_state:
     st.session_state.applied_known_sites = set(_ks.split(",")) if _ks else set()
 if 'applied_date_min' not in st.session_state:
     _d = st.query_params.get("date_min")
-    st.session_state.applied_date_min = _d  # stored as ISO string or None
+    st.session_state.applied_date_min = _d if _d else None  # empty string treated as absent
 if 'applied_date_max' not in st.session_state:
     _d = st.query_params.get("date_max")
-    st.session_state.applied_date_max = _d  # stored as ISO string or None
+    st.session_state.applied_date_max = _d if _d else None  # empty string treated as absent
 if 'current_page' not in st.session_state:
     _pg = st.query_params.get("page", "0")
     st.session_state.current_page = int(_pg) if _pg.isdigit() else 0
