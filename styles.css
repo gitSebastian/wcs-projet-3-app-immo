@@ -20,6 +20,9 @@
     --text-light: #a6a6a6;
     --accent-blue: #3a6dd9;
     --border-cream: #a6a6a6;
+
+    --red: rgb(255, 75, 75);
+    --green: #10B981;
     
     /* Fonts */
     --font-title: 'Montserrat', sans-serif;
@@ -432,66 +435,6 @@
     margin-bottom: 1.5rem;
 }
 
-/* FAB wrapper positioning handled by JS injection (Safari CSS compat) */
-/* Zero out the flow footprint of the entire FAB vertical block.
-   float_init() + the FAB container render as a stVerticalBlock in the normal
-   flow. All children are 0px tall but the flex gap between 6 zero-height
-   children still produces ~64px. Target the stLayoutWrapper ancestor to
-   collapse the whole thing out of flow. */
-.st-key-fab_open_filters {
-    height: 0 !important;
-    min-height: 0 !important;
-    overflow: visible !important;
-}
-
-/* The stLayoutWrapper+stVerticalBlock wrapping the FAB container.
-   All FAB children are 0px but the stVerticalBlock has gap:16px between
-   6 children, producing ~64px of phantom height. Zero both out.
-   :has() is safe -- Chrome/Safari both support it. */
-[data-testid="stLayoutWrapper"]:has(.st-key-fab_open_filters),
-[data-testid="stVerticalBlock"]:has(.st-key-fab_open_filters) {
-    height: 0 !important;
-    gap: 1rem !important;
-    overflow: visible !important;
-}
-
-/* stSidebarNav renders the multi-page nav inline in the main flow at ~70px.
-   It is a sidebar concern and should not affect main content spacing. */
-[data-testid="stSidebarNav"] {
-    height: 0 !important;
-    overflow: hidden !important;
-    margin: 0 !important;
-    padding: 0 !important;
-}
-
-/* st.components.v1.html(height=0) iframes occasionally render at 30px.
-   Zero out any stElementContainer that contains only an iframe with height 0. */
-[data-testid="stElementContainer"]:has(iframe[height="0"]) {
-    height: 0 !important;
-    min-height: 0 !important;
-    margin: 0 !important;
-    padding: 0 !important;
-    overflow: hidden !important;
-}
-
-
-/* FAB button — round */
-.st-key-fab_open_filters button {
-    border-radius: 8px 0 0 8px !important;
-    width: 66px !important;
-    height: 3.5rem !important;
-    border: 0 !important;
-    background-color: #10B981 !important;
-}
-
-.st-key-fab_open_filters button p {
-    font-size: 2.7rem !important;
-    font-weight: bold;
-    color: white;
-    padding-right: 10px;
-    padding-left: 10px;
-}
-
 /* Apply button inside dialog — rectangular, green */
 div[data-testid="stDialog"] button[kind="primary"] {
     border-radius: 8px !important;
@@ -500,18 +443,6 @@ div[data-testid="stDialog"] button[kind="primary"] {
     font-size: 1rem !important;
     box-shadow: none !important;
     background-color: #10B981 !important;
-    border: none !important;
-    color: white !important;
-}
-
-/* Reset button inside dialog — same shape as Apply, Streamlit red */
-div[data-testid="stDialog"] .st-key-fab_reset_filters button {
-    border-radius: 8px !important;
-    width: 100% !important;
-    height: auto !important;
-    font-size: 1rem !important;
-    box-shadow: none !important;
-    background-color: #ff4b4b !important;
     border: none !important;
     color: white !important;
 }
@@ -603,4 +534,74 @@ div[data-testid="stDialog"] div[role="dialog"] {
 }
 .agency-banner-dismiss:hover {
     color: #f3f4f6;
+}
+
+/* ── Filter page dismiss button (×) ────────────────────────────────────────
+   Targeted via the stable .st-key-{widget_key} class Streamlit generates.
+   Tweak the variables below to adjust appearance. */
+.st-key-pf_dismiss button {
+    background: transparent !important;
+    border: none !important;
+    color: var(--red) !important;
+    font-size: 3rem !important;
+    line-height: 1 !important;
+    padding: 0 0.25rem !important;
+    width: auto !important;
+    min-width: 0 !important;
+    border-radius: 4px !important;
+}
+
+.st-key-pf_dismiss button div {
+    font-size: 3rem !important;
+}
+.st-key-pf_dismiss button:hover {
+    color: rgba(250, 250, 250, 0.9) !important;
+    background: rgba(250, 250, 250, 0.08) !important;
+}
+
+/* ── Top nav: compact icon-only layout on narrow viewports ─────────────────
+   The Overflow component uses ResizeObserver on the toolbar's clientWidth
+   (not window.innerWidth) to decide when to collapse items into "N more".
+   On a 375px iPhone screen the 3 items + their padding overflow the header.
+   Shrinking items to icon-only (~56px each) keeps all 3 visible inline.
+   The label span inside each nav link is hidden; only the Material icon shows.
+   Use a generous breakpoint (900px) so this kicks in well before any device
+   that might show the overflow, including landscape iPhones.
+   ───────────────────────────────────────────────────────────────────────── */
+@media (max-width: 900px) {
+    [data-testid="stTopNavLink"] {
+        height: 44px !important;
+        width: 44px !important;
+        gap: 0 !important;
+        min-width: 0 !important;
+        border-radius: 0 !important;
+        margin: 0 !important;
+        /* Remove the grey rounded-rect selection background */
+        background: transparent !important;
+    }
+    /* Hide the text label only -- the label span has a literal label= attribute.
+       The icon lives in a sibling span without that attribute, so it's unaffected. */
+    [data-testid="stTopNavLink"] span[label] {
+        display: none !important;
+    }
+    /* Material Symbols Rounded is a variable font.
+       font-variation-settings 'wght' bypasses the @font-face weight clamp
+       and actually controls stroke thickness (100=hairline, 400=regular).
+       font-weight alone won't work because the @font-face declares weight:400. */
+    [data-testid="stTopNavLink"] [data-testid="stIconMaterial"] {
+        font-size: 1.6rem !important;
+        font-variation-settings: 'wght' 100 !important;
+        font-weight: 400 !important;
+    }
+    /* Active page: project green, no background pill */
+    [data-testid="stTopNavLink"][aria-current="page"] [data-testid="stIconMaterial"] {
+        color: #10B981 !important;
+    }
+    /* Inactive: dimmed white */
+    [data-testid="stTopNavLink"]:not([aria-current]) [data-testid="stIconMaterial"] {
+        color: rgba(250, 250, 250, 0.45) !important;
+    }
+    [data-testid="stTopNavLinkContainer"] {
+        min-width: 0 !important;
+    }
 }

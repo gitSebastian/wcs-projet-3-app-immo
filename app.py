@@ -12,7 +12,6 @@ import re
 from urllib.parse import urlencode
 from datetime import date, timedelta
 from pathlib import Path
-from streamlit_float import *
 
 # =============================================================
 # CONFIG
@@ -206,6 +205,19 @@ no_image_data_uri = f"data:image/svg+xml;base64,{no_image_base64}"
 # Données (cache de 10 minutes)
 DEV_MODE = os.environ.get("DEV_MODE", "false").lower() == "true"
 
+# In production, hide the Annonces nav item from the top bar.
+# Listings stays in st.navigation() so Streamlit can route to it, but
+# it has no dedicated button -- the user returns via Apply or the X dismiss.
+# In DEV_MODE the home icon stays visible for navigating back from dedup pages.
+if not DEV_MODE:
+    st.markdown(
+        '<style>'
+        '[data-testid="stTopNavLinkContainer"]:has(span[label="Annonces"])'
+        '{ display: none !important; }'
+        '</style>',
+        unsafe_allow_html=True,
+    )
+
 if DEV_MODE:
     # Pas de cache pendant le dev
     def get_data():
@@ -310,28 +322,8 @@ if 'current_page' not in st.session_state:
 # Agency overlay: ephemeral param that narrows the view to one site without
 # touching the real source filter. Not stored in session state -- read fresh
 # from URL on every render so the × dismiss link works as a plain <a href>.
-agency_filter = st.query_params.get("agency", "")
 
-# =============================================================
-# HEADER - Logo
-# =============================================================
-
-st.markdown(f"""
-    <div class="header-container">
-        <img src="data:image/svg+xml;base64,{logo_base64}" alt="Logo" class="header-logo">
-        <p class="logo-text">Nant'Immo</p>
-    </div>
-""", unsafe_allow_html=True)
-
-# =============================================================
-# FLOAT FILTERS
-# =============================================================
-
-float_init()  # required once at app startup
-
-# ── Compute whether any filter is currently active (used to show Reset button) ──
-# Evaluated once per main-body render, captured by the filter_panel closure.
-# "Active" means any applied value differs from the all-data default.
+# ── Active filter detection (module level: needed by filter_panel and page_filter closures) ──
 _all_sites = sorted(df['site'].unique())
 _applied_sites = st.session_state.get('applied_selected_sites') or _all_sites
 _date_min_data = df['scraped_date_dt'].min()
@@ -355,7 +347,7 @@ _filters_are_active = any([
 
 # ── DEV_MODE: flag report dialog ────────────────────────────────
 # Opens from the flag button on each card. Writes one row to dedup_reports.
-# No matching or linking happens -- pure observation capture.
+
 @st.dialog("⚑ Signaler un doublon", width="small")
 def flag_report_dialog(row_id: int, row_title: str, row_site: str):
     st.markdown(f"**Annonce signalée:** `#{row_id}` · {row_site}")
@@ -386,7 +378,6 @@ def flag_report_dialog(row_id: int, row_title: str, row_site: str):
             st.error(f"Erreur: {e}")
 
 
-# ── Filter dialog ──────────────────────────────────────────────
 @st.dialog("⌂ Types", width="large")
 def filter_panel():
     # ------------------------------------------------------------------
@@ -622,18 +613,91 @@ def filter_panel():
     st.caption(f"Mis à jour: {df['scraped_date'].max()}")
     st.caption(f"Total: {len(df)} annonces")
 
-# ── FAB button ─────────────────────────────────────────────────
-fab = st.container()
-with fab:
-    # Style the button as a round FAB
-    st.markdown("""
-    <div class="fab-anchor"/>
+
+# =============================================================
+# PAGE FUNCTIONS
+# =============================================================
+
+def page_listings():
+    """Main listings page -- all rendering lives here."""
+    agency_filter = st.query_params.get("agency", "")
+
+    # Spoof window.innerWidth on the parent frame so Streamlit's compiled JS
+    # always sees a desktop-width viewport and renders st.navigation(position="top")
+    # as a top bar rather than collapsing it into a sidebar drawer on mobile.
+    #
+    # How it works:
+    #   useViewportSize() reads window.innerWidth and compares against
+    #   theme.breakpoints.md (768px). Below that it hard-switches Navigation
+    #   to SIDEBAR regardless of the Python position argument. Spoofing
+    #   innerWidth >= 1024 keeps the top nav permanently.
+    #
+    # Timing: React has already mounted when this script runs, so we also
+    # dispatch a synthetic resize event. React's useWindowDimensions hook
+    # listens on window.resize, re-reads innerWidth, and triggers a re-render
+    # that flips isMobile to false and swaps the nav to the top bar.
+    #
+    # One-shot guard: the spoof must survive across Streamlit reruns (which
+    # recreate this iframe) but must only dispatch resize once per page load.
+    # __nantimmoNavFixed on window.parent signals that the spoof + resize
+    # have already fired in this browser session.
+    #
+    # The CSS in styles.css (@media max-width:900px) then compacts the top
+    # nav items to icon-only so they fit within a 375px iPhone header.
+    st.components.v1.html("""
+        <script>
+        (function() {
+            var top = window.parent;
+            if (top.__nantimmoNavFixed) return;
+            top.__nantimmoNavFixed = true;
+
+            var MIN_WIDTH = 1024;
+
+            // Hide the header immediately -- synchronously, before first paint --
+            // so the >> sidebar toggle never appears. Revealed after the resize
+            // event fires and React has re-rendered with the top nav in place.
+            var hideStyle = top.document.createElement('style');
+            hideStyle.id = 'nantimmo-nav-hide';
+            hideStyle.textContent = '[data-testid="stExpandSidebarButton"] { visibility: hidden; }';
+            top.document.head.appendChild(hideStyle);
+
+            var desc = Object.getOwnPropertyDescriptor(Window.prototype, 'innerWidth')
+                    || Object.getOwnPropertyDescriptor(top, 'innerWidth');
+            var orig = (desc && desc.get) ? desc.get : function() { return top.screen.width; };
+            Object.defineProperty(top, 'innerWidth', {
+                get: function() {
+                    var real = orig.call(this);
+                    return real < MIN_WIDTH ? MIN_WIDTH : real;
+                },
+                configurable: true
+            });
+
+            // Trigger React's resize listener so it re-reads innerWidth now.
+            // Use requestAnimationFrame to ensure React has committed the
+            // re-render before we reveal the header.
+            top.dispatchEvent(new Event('resize'));
+            top.requestAnimationFrame(function() {
+                top.requestAnimationFrame(function() {
+                    var s = top.document.getElementById('nantimmo-nav-hide');
+                    if (s) s.remove();
+                });
+            });
+        })();
+        </script>
+    """, height=0)
+    
+    # =============================================================
+    # HEADER - Logo
+    # =============================================================
+    
+    st.markdown(f"""
+        <div class="header-container">
+            <img src="data:image/svg+xml;base64,{logo_base64}" alt="Logo" class="header-logo">
+            <p class="logo-text">Nant'Immo</p>
+        </div>
     """, unsafe_allow_html=True)
-
-    if st.button("⚙\uFE0E", key="fab_open_filters"):
-        filter_panel()
-
-    # Scroll-to-top: pure HTML button injected into the parent frame.
+    
+    # ── Scroll-to-top: pure HTML button injected into the parent frame.
     # Using st.button would trigger a Streamlit rerun on every click, which
     # destroys and recreates the component iframe -- the scroll fires once
     # then stops working. A native DOM button bypasses Streamlit entirely:
@@ -647,25 +711,24 @@ with fab:
             if (window.parent.__nantimmoSTT) return;
             window.parent.__nantimmoSTT = true;
             var doc = window.parent.document;
-
+    
             var btn = doc.createElement('button');
             btn.id = 'stt-btn';
             btn.innerHTML = '&#8593;';
             doc.body.appendChild(btn);
-
+    
             var style = doc.createElement('style');
             style.textContent = `
                 #stt-btn {
                     position: fixed;
-                    bottom: 70%;
+                    top: 60px;
                     right: 0;
-                    width: 66px;
+                    width: 3.5rem;
                     height: 3.5rem;
                     background: #2b2b2b;
                     color: white;
                     border: 0;
-                    border-radius: 8px 0 0 8px;
-                    font-size: 2rem;
+                    font-size: 1.8rem;
                     font-weight: 600;
                     line-height: 1;
                     cursor: pointer;
@@ -679,7 +742,7 @@ with fab:
                 #stt-btn:active { background: #1a1a1a; }
             `;
             doc.head.appendChild(style);
-
+    
             btn.addEventListener('click', function() {
                 var el = doc.querySelector('[data-testid="stMain"]');
                 if (el) el.scrollTop = 0;
@@ -687,46 +750,8 @@ with fab:
         })();
         </script>
     """, height=0)
-
-    # Fix FAB position directly via JS -- CSS right:0 is unreliable in Safari
-    # when the element's static flow position is on the left. Inline style wins
-    # over any stylesheet rule in all browsers.
-    # Button is hidden until JS positions it to prevent a visible flash while
-    # the element is still in static flow. visibility:hidden keeps layout space
-    # (unlike display:none) so the container doesn't collapse between renders.
-    # No one-shot guard: Streamlit reruns destroy/recreate the DOM so the
-    # fix must re-apply on every render.
-    st.components.v1.html("""
-        <script>
-        (function() {
-            var doc = window.parent.document;
-
-            // Hide immediately so the button is invisible while in static flow.
-            // Runs synchronously -- before the browser paints -- so no flash.
-            var style = doc.getElementById('fab-hide-style');
-            if (!style) {
-                style = doc.createElement('style');
-                style.id = 'fab-hide-style';
-                style.textContent = '.st-key-fab_open_filters { visibility: hidden; }';
-                doc.head.appendChild(style);
-            }
-
-            var fix = function() {
-                var fab = doc.querySelector('.st-key-fab_open_filters');
-                if (!fab) { setTimeout(fix, 50); return; }
-                fab.style.setProperty('position', 'fixed', 'important');
-                fab.style.setProperty('bottom', '67%', 'important');
-                fab.style.setProperty('right', '0', 'important');
-                fab.style.setProperty('left', 'auto', 'important');
-                fab.style.setProperty('width', '66px', 'important');
-                fab.style.setProperty('z-index', '9999', 'important');
-                fab.style.setProperty('visibility', 'visible', 'important');
-            };
-            fix();
-        })();
-        </script>
-    """, height=0)
-
+    
+    
     # Pull-to-refresh for standalone PWA (home screen icon).
     # Injected into the parent frame via the same pattern as the scroll-to-top
     # observer. Hidden by CSS in normal browser tabs -- only activates under
@@ -737,15 +762,15 @@ with fab:
         (function() {
             if (window.parent.__nantimmoPTR) return;
             window.parent.__nantimmoPTR = true;
-
+    
             var doc = window.parent.document;
-
+    
             // Spinner element -- always in DOM, visibility driven by opacity + translateY
             var spinner = doc.createElement('div');
             spinner.id = 'ptr-spinner';
             spinner.innerHTML = '&#8635;';
             doc.body.appendChild(spinner);
-
+    
             var style = doc.createElement('style');
             style.textContent = `
                 #ptr-spinner {
@@ -784,21 +809,21 @@ with fab:
                 }
             `;
             doc.head.appendChild(style);
-
+    
             var startY = 0;
             var THRESHOLD = 72;      // drag distance before commit (px)
             var MAX_DRAG = 80;       // caps visual travel
             var pulling = false;
             var triggered = false;
-
+    
             function getScrollEl() {
                 return doc.querySelector('[data-testid="stMain"]');
             }
-
+    
             function isDialogOpen() {
                 return !!doc.querySelector('[data-baseweb="modal"]');
             }
-
+    
             doc.addEventListener('touchstart', function(e) {
                 if (isDialogOpen()) return;
                 var el = getScrollEl();
@@ -809,43 +834,43 @@ with fab:
                 // Remove committed class from any previous cycle
                 spinner.classList.remove('ptr-committed');
             }, { passive: true });
-
+    
             doc.addEventListener('touchmove', function(e) {
                 if (!pulling) return;
                 if (isDialogOpen()) { pulling = false; return; }
                 var el = getScrollEl();
                 if (!el || el.scrollTop > 0) { pulling = false; return; }
-
+    
                 var dy = e.touches[0].clientY - startY;
                 if (dy <= 0) {
                     spinner.style.opacity = '0';
                     spinner.style.transform = 'translateX(-50%) translateY(-56px)';
                     return;
                 }
-
+    
                 // Suppress iOS native rubber-band so our indicator owns the visual
                 el.style.overscrollBehaviorY = 'contain';
-
+    
                 // Resistance curve: feels like pulling against a spring
                 var travel = Math.min(dy * 0.55, MAX_DRAG);
                 var progress = Math.min(travel / MAX_DRAG, 1);
-
+    
                 // Fade in and slide down proportionally to drag distance
                 spinner.style.opacity = String(progress);
                 spinner.style.transform = 'translateX(-50%) translateY(' + (travel - 56) + 'px)';
-
+    
                 if (dy >= THRESHOLD && !triggered) {
                     triggered = true;
                 }
             }, { passive: true });
-
+    
             doc.addEventListener('touchend', function() {
                 if (!pulling) return;
                 pulling = false;
-
+    
                 var el = getScrollEl();
                 if (el) el.style.overscrollBehaviorY = '';
-
+    
                 if (triggered) {
                     // Snap spinner to final position and keep it visible during reload
                     spinner.classList.add('ptr-committed');
@@ -865,7 +890,7 @@ with fab:
         })();
         </script>
     """, height=0)
-
+    
     # localStorage safety net for favorites.
     # Primary fix for iOS PWA: when the app is closed and reopened, iOS
     # restores it to the base URL with no query params, wiping URL-stored
@@ -902,7 +927,7 @@ with fab:
             var top = window.top;
             // Value injected directly by Python -- always current, never stale.
             var currentFavs = {repr(_fav_str)};
-
+    
             // Restore path: one-shot per page lifecycle.
             // Runs on cold PWA launch when URL has no favorites param.
             // Uses window.top so localStorage access is against the real app
@@ -919,515 +944,711 @@ with fab:
                     return;
                 }}
             }}
-
+    
             // Sync path: write Python's authoritative value to localStorage.
             // Runs on every rerun so heart taps update storage immediately.
             try {{ top.localStorage.setItem(LS_KEY, currentFavs); }} catch(e) {{}}
         }})();
         </script>
     """, height=0)
-
-# =============================================================
-# RESOLVE APPLIED FILTER VALUES
-# (reads from session state written by the dialog's Apply button)
-# =============================================================
-
-available_sites  = sorted(df['site'].unique())
-date_min_data    = df['scraped_date_dt'].min()
-date_max_data    = df['scraped_date_dt'].max()
-
-# Sites: first Apply hasn't happened yet → fall back to URL params / select-all
-if st.session_state.applied_selected_sites is None:
-    selected_sites = get_url_param_list('sites', available_sites)
-else:
-    # Auto-include any source added since the user last clicked Apply.
-    # applied_known_sites records what was available at Apply time.
-    # A source in available_sites but absent from applied_known_sites
-    # is new and must be force-selected regardless of applied_selected_sites.
-    new_since_apply = [s for s in available_sites
-                       if s not in st.session_state.applied_known_sites]
-    selected_sites = list(st.session_state.applied_selected_sites) + new_since_apply
-
-# Search
-search_term    = st.session_state.applied_search
-show_favorites = st.session_state.applied_show_favorites
-
-# Price
-raw_price_min  = st.session_state.applied_price_min
-raw_price_max  = st.session_state.applied_price_max
-price_min      = parse_price_input(raw_price_min)
-price_max      = parse_price_input(raw_price_max)
-
-# Surface
-m2_min = st.session_state.applied_m2_min
-m2_max = st.session_state.applied_m2_max
-
-# Sort
-SORT_OPTIONS = {
-    "Date (récent → ancien)":  (None,            None),
-    "Prix (croissant)":        ("price_numeric",  True),
-    "Prix (décroissant)":      ("price_numeric",  False),
-    "Prix/m² (croissant)":     ("price_per_m2",   True),
-    "Prix/m² (décroissant)":   ("price_per_m2",   False),
-    "Surface (croissante)":    ("square_meters",  True),
-    "Surface (décroissante)":  ("square_meters",  False),
-}
-sort_label = st.session_state.applied_sort_label
-sort_col, sort_asc = SORT_OPTIONS[sort_label]
-
-# Dates
-try:
-    selected_date_min = date.fromisoformat(st.session_state.applied_date_min) if st.session_state.applied_date_min else date_min_data
-    selected_date_max = date.fromisoformat(st.session_state.applied_date_max) if st.session_state.applied_date_max else date_max_data
-except (ValueError, TypeError):
-    selected_date_min = date_min_data
-    selected_date_max = date_max_data
-
-# Clamp to actual data bounds (guards against stale session values)
-selected_date_min = max(selected_date_min, date_min_data)
-selected_date_max = min(selected_date_max, date_max_data)
-
-# =============================================================
-# MISE À JOUR URL
-# =============================================================
-
-st.query_params.update({
-    "sites":       ",".join(selected_sites),
-    "known_sites": ",".join(available_sites),
-    "date_min":    selected_date_min.isoformat() if selected_date_min > date_min_data else "",
-    "date_max":    selected_date_max.isoformat() if selected_date_max < date_max_data else "",
-    "search":      search_term,
-    "price_min":   str(price_min) if price_min is not None else "",
-    "price_max":   str(price_max) if price_max is not None else "",
-    "m2_min":      str(m2_min) if m2_min else "",
-    "m2_max":      str(m2_max) if m2_max else "",
-    "sort":        sort_label,
-    "property_types": ",".join(st.session_state.applied_property_types or []),
-    "show_favorites": "1" if show_favorites else "",
-    "favorites":   ",".join(str(x) for x in st.session_state.favorites),
-    "page":        str(st.session_state.current_page),
-    "agency":      agency_filter,
-})
-
-# =============================================================
-# FILTRAGE DES DONNÉES
-# =============================================================
-
-if not selected_sites:
-    st.warning("! Sélectionnez au moins une source")
-    filtered_df = pd.DataFrame()
-else:
-    filtered_df = df.copy()
-
-    # Filtrer par site
-    filtered_df = filtered_df[filtered_df['site'].isin(selected_sites)]
-
-    # Filtrer par plage de dates
-    filtered_df = filtered_df[
-        (filtered_df['scraped_date_dt'] >= selected_date_min) &
-        (filtered_df['scraped_date_dt'] <= selected_date_max)
-    ]
-
-    # Filtrer par recherche
-    if search_term:
-        search_mask = (
-            filtered_df['title'].str.contains(search_term, case=False, na=False) |
-            filtered_df['description'].str.contains(search_term, case=False, na=False)
-        )
-        filtered_df = filtered_df[search_mask]
-
-    # Filtrer par prix min
-    if price_min is not None:
-        filtered_df = filtered_df[filtered_df['price_numeric'] >= price_min]
-
-    # Filtrer par prix max
-    if price_max is not None:
-        filtered_df = filtered_df[filtered_df['price_numeric'] <= price_max]
-
-    # Filtrer par surface min
-    if m2_min is not None:
-        filtered_df = filtered_df[
-            (filtered_df['square_meters'] >= m2_min) |
-            (filtered_df['square_meters'].isna())  # Garde les annonces sans m² renseignés
-        ]
-
-    # Filtrer par surface max
-    if m2_max is not None:
-        filtered_df = filtered_df[
-            (filtered_df['square_meters'] <= m2_max) |
-            (filtered_df['square_meters'].isna())  # Garde les annonces sans m² renseignés
-        ]
-
-    # Filtrer par type de bien
-    # applied_property_types holds display labels (e.g. "Appartements").
-    # Expand to raw DB values via PROPERTY_TYPE_GROUPS before filtering.
-    _active_ptypes = st.session_state.applied_property_types
-    if _active_ptypes is not None and set(_active_ptypes) != set(ALL_PROPERTY_TYPE_LABELS):
-        # _named_types: types explicitly claimed by a named group (Appartements/Maisons/Parkings).
-        # Anything not in this set is either NULL (mystery) or a non-residential type
-        # (commercial, terrain, chateau, etc.) -- all treated as "Autres".
-        # This means "Autres" never needs manual maintenance as new types are added.
-        _named_types = [v for label in PROPERTY_TYPE_GROUPS if label != 'Autres'
-                        for v in PROPERTY_TYPE_GROUPS[label]]
-        if 'Autres' in _active_ptypes:
-            # Autres selected: include anything not claimed by a named group
-            _raw_types = [v for label in _active_ptypes if label != 'Autres'
-                          for v in PROPERTY_TYPE_GROUPS[label]]
-            filtered_df = filtered_df[
-                filtered_df['property_type'].isin(_raw_types) |
-                (~filtered_df['property_type'].isin(_named_types))
-            ]
-        else:
-            # Autres not selected: include only explicitly named types + NULL pass-through
-            _raw_types = [v for label in _active_ptypes for v in PROPERTY_TYPE_GROUPS[label]]
-            filtered_df = filtered_df[
-                filtered_df['property_type'].isin(_raw_types) |
-                (filtered_df['property_type'].isna())
-            ]
-
-    # Filtrer par agence (overlay -- ephemeral, does not touch applied_selected_sites)
-    if agency_filter:
-        filtered_df = filtered_df[filtered_df['site'] == agency_filter]
-
-    # Filtrer par favoris
-    if show_favorites:
-        filtered_df = filtered_df[filtered_df['id'].isin(st.session_state.favorites)]
-
-    # Trier
-    if sort_col is None:
-        # Default: preserve DB order (created_at DESC, scrape_order ASC)
-        # The DataFrame already arrives in this order from the query — no-op.
-        pass
-    elif sort_col in ('price_per_m2', 'price_numeric', 'square_meters'):
-        # Listings with no value sink to the bottom regardless of direction
-        filtered_df = filtered_df.sort_values(
-            by=sort_col,
-            ascending=sort_asc,
-            na_position='last'
-        )
+    
+    # =============================================================
+    # RESOLVE APPLIED FILTER VALUES
+    # (reads from session state written by the dialog's Apply button)
+    # =============================================================
+    
+    available_sites  = sorted(df['site'].unique())
+    date_min_data    = df['scraped_date_dt'].min()
+    date_max_data    = df['scraped_date_dt'].max()
+    
+    # Sites: first Apply hasn't happened yet → fall back to URL params / select-all
+    if st.session_state.applied_selected_sites is None:
+        selected_sites = get_url_param_list('sites', available_sites)
     else:
-        filtered_df = filtered_df.sort_values(
-            by=sort_col,
-            ascending=sort_asc
-        )
-
-# =============================================================
-# UI - STATISTIQUES ON TOP
-# =============================================================
-
-# Last scrape hour: max created_at among rows that share the most recent scraped_date.
-# created_at is a datetime; extract HH:MM in Paris local time for display.
-_last_date = df['scraped_date'].max()
-_last_ts = pd.to_datetime(df.loc[df['scraped_date'] == _last_date, 'created_at']).max()
-try:
-    import zoneinfo
-    _paris = zoneinfo.ZoneInfo('Europe/Paris')
-    _last_hour = _last_ts.tz_localize('UTC').astimezone(_paris).strftime('%Hh%M')
-except Exception:
-    _last_hour = _last_ts.strftime('%Hh%M')  # fallback: UTC, better than nothing
-
-st.markdown(f"""
-    <div class="stats-container">
-        <div class="stat-item">
-            <p class="stat-label">Annonces:</p>
-            <p class="stat-value">{len(filtered_df)} / {len(df)}</p>
-        </div>
-        <div class="stat-item">
-            <p class="stat-label">Agences:</p>
-            <p class="stat-value">{filtered_df['site'].nunique()} / {df['site'].nunique()}</p>
-        </div>
-    </div>
-        <br>
-    <div class="stats-container">
-        <div class="stat-item">
-            <p class="stat-label">Mis à jour:</p>
-            <p class="stat-value">{_last_date} · {_last_hour}</p>
-        </div>
-    </div>
-""", unsafe_allow_html=True)
-
-# DEV_MODE toolbar: shows dedup stats and link to review page.
-# Never rendered in production (DEV_MODE=false).
-if DEV_MODE:
-    m = _re.match(r'postgresql://([^:]+):([^@]+)@([^:]+):(\d+)/(\w+)', DATABASE_URL)
-    _u, _pw, _h, _p, _db = m.groups()
-    _conn = pg8000.native.Connection(
-        user=_u, password=_pw, host=_h,
-        port=int(_p), database=_db,
-        ssl_context=True, timeout=10
-    )
+        # Auto-include any source added since the user last clicked Apply.
+        # applied_known_sites records what was available at Apply time.
+        # A source in available_sites but absent from applied_known_sites
+        # is new and must be force-selected regardless of applied_selected_sites.
+        new_since_apply = [s for s in available_sites
+                           if s not in st.session_state.applied_known_sites]
+        selected_sites = list(st.session_state.applied_selected_sites) + new_since_apply
+    
+    # Search
+    search_term    = st.session_state.applied_search
+    show_favorites = st.session_state.applied_show_favorites
+    
+    # Price
+    raw_price_min  = st.session_state.applied_price_min
+    raw_price_max  = st.session_state.applied_price_max
+    price_min      = parse_price_input(raw_price_min)
+    price_max      = parse_price_input(raw_price_max)
+    
+    # Surface
+    m2_min = st.session_state.applied_m2_min
+    m2_max = st.session_state.applied_m2_max
+    
+    # Sort
+    SORT_OPTIONS = {
+        "Date (récent → ancien)":  (None,            None),
+        "Prix (croissant)":        ("price_numeric",  True),
+        "Prix (décroissant)":      ("price_numeric",  False),
+        "Prix/m² (croissant)":     ("price_per_m2",   True),
+        "Prix/m² (décroissant)":   ("price_per_m2",   False),
+        "Surface (croissante)":    ("square_meters",  True),
+        "Surface (décroissante)":  ("square_meters",  False),
+    }
+    sort_label = st.session_state.applied_sort_label
+    sort_col, sort_asc = SORT_OPTIONS[sort_label]
+    
+    # Dates
     try:
-        _linked_count = _conn.run(
-            'SELECT COUNT(*) as n FROM properties WHERE canonical_id IS NOT NULL'
-        )[0][0]
-    finally:
-        _conn.close()
-    st.markdown(
-        f'<div class="dev-toolbar">'
-        f'🛠 DEV · '
-        f'<b>{_linked_count}</b> doublons masqués '
-        f'· <a href="/dedup_review" target="_self">Voir les paires →</a>'
-        f'</div>',
-        unsafe_allow_html=True,
-    )
-
-st.divider()
-
-# =============================================================
-# UI - LISTE DES ANNONCES
-# =============================================================
-
-if len(filtered_df) == 0:
+        selected_date_min = date.fromisoformat(st.session_state.applied_date_min) if st.session_state.applied_date_min else date_min_data
+        selected_date_max = date.fromisoformat(st.session_state.applied_date_max) if st.session_state.applied_date_max else date_max_data
+    except (ValueError, TypeError):
+        selected_date_min = date_min_data
+        selected_date_max = date_max_data
+    
+    # Clamp to actual data bounds (guards against stale session values)
+    selected_date_min = max(selected_date_min, date_min_data)
+    selected_date_max = min(selected_date_max, date_max_data)
+    
+    # =============================================================
+    # MISE À JOUR URL
+    # =============================================================
+    
+    st.query_params.update({
+        "sites":       ",".join(selected_sites),
+        "known_sites": ",".join(available_sites),
+        "date_min":    selected_date_min.isoformat() if selected_date_min > date_min_data else "",
+        "date_max":    selected_date_max.isoformat() if selected_date_max < date_max_data else "",
+        "search":      search_term,
+        "price_min":   str(price_min) if price_min is not None else "",
+        "price_max":   str(price_max) if price_max is not None else "",
+        "m2_min":      str(m2_min) if m2_min else "",
+        "m2_max":      str(m2_max) if m2_max else "",
+        "sort":        sort_label,
+        "property_types": ",".join(st.session_state.applied_property_types or []),
+        "show_favorites": "1" if show_favorites else "",
+        "favorites":   ",".join(str(x) for x in st.session_state.favorites),
+        "page":        str(st.session_state.current_page),
+        "agency":      agency_filter,
+    })
+    
+    # =============================================================
+    # FILTRAGE DES DONNÉES
+    # =============================================================
+    
     if not selected_sites:
-        pass  # Warning already shown above
+        st.warning("! Sélectionnez au moins une source")
+        filtered_df = pd.DataFrame()
     else:
-        st.info("Aucune annonce avec ces filtres")
-else:
-    # Pagination -- bypassed in agency overlay mode (flat list, all listings).
-    # When agency_filter is active: page_df = full filtered set, no nav bars rendered.
-    if agency_filter:
-        page_df      = filtered_df
-        current_page = 0
-        total_pages  = 1
-        first_url = prev_url = next_url = last_url = ''
-        first_attr = prev_attr = next_attr = last_attr = 'aria-disabled="true"'
-    else:
-        unique_dates = sorted(filtered_df['scraped_date_dt'].unique(), reverse=True)
-        total_pages  = max(1, len(unique_dates))
-        current_page = min(st.session_state.current_page, total_pages - 1)  # clamp after filter
-        page_df      = filtered_df[filtered_df['scraped_date_dt'] == unique_dates[current_page]] if unique_dates else filtered_df.iloc[0:0]
-
-        # Nav bar — pure HTML links, no st.columns needed
-        def _nav_url(p):
-            """Build a URL for page p preserving all current query params."""
-            params = dict(st.query_params)
-            params['page'] = str(p)
-            return '?' + urlencode(params)
-
-        prev_url  = _nav_url(current_page - 1)
-        next_url  = _nav_url(current_page + 1)
-        first_url = _nav_url(0)
-        last_url  = _nav_url(total_pages - 1)
-        prev_attr  = '' if current_page > 0 else 'aria-disabled="true"'
-        next_attr  = '' if current_page < total_pages - 1 else 'aria-disabled="true"'
-        first_attr = '' if current_page > 0 else 'aria-disabled="true"'
-        last_attr  = '' if current_page < total_pages - 1 else 'aria-disabled="true"'
-
-        st.markdown(f"""
-            <div class="page-nav">
-                <a href="{first_url}" class="nav-btn nav-btn-edge" {first_attr} target="_self">&#8676;</a>
-                <a href="{prev_url}" class="nav-btn" {prev_attr} target="_self">Pr&#233;c.</a>
-                <span class="nav-label">{current_page + 1} / {total_pages}</span>
-                <a href="{next_url}" class="nav-btn" {next_attr} target="_self">Suiv.</a>
-                <a href="{last_url}" class="nav-btn nav-btn-edge" {last_attr} target="_self">&#8677;</a>
+        filtered_df = df.copy()
+    
+        # Filtrer par site
+        filtered_df = filtered_df[filtered_df['site'].isin(selected_sites)]
+    
+        # Filtrer par plage de dates
+        filtered_df = filtered_df[
+            (filtered_df['scraped_date_dt'] >= selected_date_min) &
+            (filtered_df['scraped_date_dt'] <= selected_date_max)
+        ]
+    
+        # Filtrer par recherche
+        if search_term:
+            search_mask = (
+                filtered_df['title'].str.contains(search_term, case=False, na=False) |
+                filtered_df['description'].str.contains(search_term, case=False, na=False)
+            )
+            filtered_df = filtered_df[search_mask]
+    
+        # Filtrer par prix min
+        if price_min is not None:
+            filtered_df = filtered_df[filtered_df['price_numeric'] >= price_min]
+    
+        # Filtrer par prix max
+        if price_max is not None:
+            filtered_df = filtered_df[filtered_df['price_numeric'] <= price_max]
+    
+        # Filtrer par surface min
+        if m2_min is not None:
+            filtered_df = filtered_df[
+                (filtered_df['square_meters'] >= m2_min) |
+                (filtered_df['square_meters'].isna())  # Garde les annonces sans m² renseignés
+            ]
+    
+        # Filtrer par surface max
+        if m2_max is not None:
+            filtered_df = filtered_df[
+                (filtered_df['square_meters'] <= m2_max) |
+                (filtered_df['square_meters'].isna())  # Garde les annonces sans m² renseignés
+            ]
+    
+        # Filtrer par type de bien
+        # applied_property_types holds display labels (e.g. "Appartements").
+        # Expand to raw DB values via PROPERTY_TYPE_GROUPS before filtering.
+        _active_ptypes = st.session_state.applied_property_types
+        if _active_ptypes is not None and set(_active_ptypes) != set(ALL_PROPERTY_TYPE_LABELS):
+            # _named_types: types explicitly claimed by a named group (Appartements/Maisons/Parkings).
+            # Anything not in this set is either NULL (mystery) or a non-residential type
+            # (commercial, terrain, chateau, etc.) -- all treated as "Autres".
+            # This means "Autres" never needs manual maintenance as new types are added.
+            _named_types = [v for label in PROPERTY_TYPE_GROUPS if label != 'Autres'
+                            for v in PROPERTY_TYPE_GROUPS[label]]
+            if 'Autres' in _active_ptypes:
+                # Autres selected: include anything not claimed by a named group
+                _raw_types = [v for label in _active_ptypes if label != 'Autres'
+                              for v in PROPERTY_TYPE_GROUPS[label]]
+                filtered_df = filtered_df[
+                    filtered_df['property_type'].isin(_raw_types) |
+                    (~filtered_df['property_type'].isin(_named_types))
+                ]
+            else:
+                # Autres not selected: include only explicitly named types + NULL pass-through
+                _raw_types = [v for label in _active_ptypes for v in PROPERTY_TYPE_GROUPS[label]]
+                filtered_df = filtered_df[
+                    filtered_df['property_type'].isin(_raw_types) |
+                    (filtered_df['property_type'].isna())
+                ]
+    
+        # Filtrer par agence (overlay -- ephemeral, does not touch applied_selected_sites)
+        if agency_filter:
+            filtered_df = filtered_df[filtered_df['site'] == agency_filter]
+    
+        # Filtrer par favoris
+        if show_favorites:
+            filtered_df = filtered_df[filtered_df['id'].isin(st.session_state.favorites)]
+    
+        # Trier
+        if sort_col is None:
+            # Default: preserve DB order (created_at DESC, scrape_order ASC)
+            # The DataFrame already arrives in this order from the query — no-op.
+            pass
+        elif sort_col in ('price_per_m2', 'price_numeric', 'square_meters'):
+            # Listings with no value sink to the bottom regardless of direction
+            filtered_df = filtered_df.sort_values(
+                by=sort_col,
+                ascending=sort_asc,
+                na_position='last'
+            )
+        else:
+            filtered_df = filtered_df.sort_values(
+                by=sort_col,
+                ascending=sort_asc
+            )
+    
+    # =============================================================
+    # UI - STATISTIQUES ON TOP
+    # =============================================================
+    
+    # Last scrape hour: max created_at among rows that share the most recent scraped_date.
+    # created_at is a datetime; extract HH:MM in Paris local time for display.
+    _last_date = df['scraped_date'].max()
+    _last_ts = pd.to_datetime(df.loc[df['scraped_date'] == _last_date, 'created_at']).max()
+    try:
+        import zoneinfo
+        _paris = zoneinfo.ZoneInfo('Europe/Paris')
+        _last_hour = _last_ts.tz_localize('UTC').astimezone(_paris).strftime('%Hh%M')
+    except Exception:
+        _last_hour = _last_ts.strftime('%Hh%M')  # fallback: UTC, better than nothing
+    
+    st.markdown(f"""
+        <div class="stats-container">
+            <div class="stat-item">
+                <p class="stat-label">Annonces:</p>
+                <p class="stat-value">{len(filtered_df)} / {len(df)}</p>
             </div>
-        """, unsafe_allow_html=True)
-
-    # Scroll-to-top on page/filter navigation. Not fired on st.button reruns
-    # because those don't cause DOM mutations in stMain -- Streamlit does a
-    # reconciled in-place update, so the observer debounce never commits.
-    st.components.v1.html("""
-        <script>
-        if (!window.parent.__nantimmoObs) {
-            var s = window.parent.document.createElement('script');
-            s.textContent = `
-                var el = document.querySelector('[data-testid=stMain]');
-                if (el && !window.__nantimmoObs) {
-                    var t = null;
-                    window.__nantimmoObs = new MutationObserver(function() {
-                        clearTimeout(t);
-                        t = setTimeout(function() { el.scrollTop = 0; }, 150);
-                    });
-                    window.__nantimmoObs.observe(el, { childList: true, subtree: true });
-                }
-            `;
-            window.parent.document.head.appendChild(s);
-            window.parent.__nantimmoObs = true;
-        }
-        </script>
-    """, height=0)
-
-    # Inject all heart color rules in a single st.markdown call to avoid
-    # per-card empty stMarkdownContainer elements that create row gaps.
-    _fav_bottom = '37px' if DEV_MODE else '21px'  # DEV_MODE adds flag button below, shifting the card anchor
-    heart_styles = ''.join(
-        (
-            f".st-key-fav_{row['id']} [data-testid='stBaseButton-secondary'] {{"
-            f" bottom: {_fav_bottom} !important;"
-            f" background: {'#10B981' if row['id'] in st.session_state.favorites else 'transparent'} !important;"
-            f" border-color: {'#10B981' if row['id'] in st.session_state.favorites else 'var(--border-cream)'} !important; }}"
-            # Always the same filled glyph (U+2665). Unfavorited: knock fill to transparent,
-            # draw outline via -webkit-text-stroke. Same path = identical optical size.
-            + (f".st-key-fav_{row['id']} button p {{"
-               f" color: #ffffff !important;"
-               f" -webkit-text-stroke: 0 !important;"
-               f" font-size: 1.4rem !important; }}"
-               if row['id'] in st.session_state.favorites else
-               f".st-key-fav_{row['id']} button p {{"
-               f" color: transparent !important;"
-               f" -webkit-text-stroke: 1px #ffffff !important;"
-               f" font-size: 1.4rem !important; }}")
+            <div class="stat-item">
+                <p class="stat-label">Agences:</p>
+                <p class="stat-value">{filtered_df['site'].nunique()} / {df['site'].nunique()}</p>
+            </div>
+        </div>
+            <br>
+        <div class="stats-container">
+            <div class="stat-item">
+                <p class="stat-label">Mis à jour:</p>
+                <p class="stat-value">{_last_date} · {_last_hour}</p>
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
+    
+    # DEV_MODE toolbar: shows dedup stats and link to review page.
+    # Never rendered in production (DEV_MODE=false).
+    if DEV_MODE:
+        m = _re.match(r'postgresql://([^:]+):([^@]+)@([^:]+):(\d+)/(\w+)', DATABASE_URL)
+        _u, _pw, _h, _p, _db = m.groups()
+        _conn = pg8000.native.Connection(
+            user=_u, password=_pw, host=_h,
+            port=int(_p), database=_db,
+            ssl_context=True, timeout=10
         )
-        for _, row in page_df.iterrows()
-    )
-    st.markdown(f'<style>{heart_styles}</style>', unsafe_allow_html=True)
-
-    # Agency overlay banner -- shown only when ?agency= is active.
-    # × is a plain <a href> that drops agency from current params and
-    # returns to the exact same page, filters untouched.
-    if agency_filter:
-        _dismiss_params = {k: v for k, v in st.query_params.items() if k != 'agency'}
-        _dismiss_url = '?' + urlencode(_dismiss_params) if _dismiss_params else '?'
-        _agency_count = len(filtered_df)
+        try:
+            _linked_count = _conn.run(
+                'SELECT COUNT(*) as n FROM properties WHERE canonical_id IS NOT NULL'
+            )[0][0]
+        finally:
+            _conn.close()
         st.markdown(
-            f'<div class="agency-banner">'
-            f'<span class="agency-banner-name">{agency_filter}</span>'
-            f'<span class="agency-banner-count">{_agency_count} annonce{"s" if _agency_count != 1 else ""}</span>'
-            f'<a href="{_dismiss_url}" class="agency-banner-dismiss" target="_self">&#x2715;</a>'
+            f'<div class="dev-toolbar">'
+            f'🛠 DEV · '
+            f'<b>{_linked_count}</b> doublons masqués '
+            f'· <a href="/dedup_review" target="_self">Voir les paires →</a>'
             f'</div>',
             unsafe_allow_html=True,
         )
-
-    # Afficher les cartes, row-by-row (3 per row) to avoid empty column gaps on last row
-    for chunk_start in range(0, len(page_df), 3):
-        chunk = page_df.iloc[chunk_start:chunk_start+3]
-        cols = st.columns(3) if len(chunk) == 3 else st.columns(len(chunk))
-        for col, (_, row) in zip(cols, chunk.iterrows()):
-
-            # Prix principal
-            price_display = format_price(row['price_numeric'])
-
-            # Prix au m² (shown only when both values are available)
-            price_m2_display = format_price_per_m2(row['price_per_m2'])
-
-            # Titre : nettoyer le préfixe/suffixe pour OuestFrance
-            raw_title = row['title'] if pd.notna(row['title']) else ''
-            if row['site'] == 'Ouest France Immo':
-                title = clean_ouestfrance_title(raw_title)
-            else:
-                title = raw_title
-
-            # Description : tronquer à 100 caractères
-            raw_desc = row['description'] if pd.notna(row['description']) else ''
-            description = (raw_desc[:150] + '…') if len(raw_desc) > 150 else (raw_desc or 'Pas de description')
-
-            is_favorited = row['id'] in st.session_state.favorites
-            button_key = f"fav_{row['id']}"
-
-            # Price history: derive change signal from price_history JSONB.
-            # price_history is [{price, date}, ...] oldest first.
-            ph = row.get('price_history')
-            ph = ph if (ph and isinstance(ph, list)) else []
-            sq = row.get('square_meters')  # used to compute per-entry m2 price
-            if ph:
-                prev_price = ph[-1].get('price')
-                if prev_price is not None and row['price_numeric'] is not None:
-                    if row['price_numeric'] < prev_price:
-                        p_color, p_arrow = '#10B981', '&#8595;'  # green, down
-                    else:
-                        p_color, p_arrow = '#ef4444', '&#8593;'  # red, up
-                    amount_html = f'<span style="color:{p_color}">{p_arrow} {price_display}</span>'
-                else:
-                    amount_html = price_display
-                # One line per history entry: price - m2/price - date
-                entry_lines = []
-                for e in ph:
-                    ep = e.get('price')
-                    if ep is None:
-                        continue
-                    ed = e.get('date', '')
-                    em2 = (f' - {int(round(ep / sq)):,} €/m²'.replace(',', ' '))\
-                          if (sq and sq > 0) else ''
-                    entry_lines.append(
-                        f'<span class="card-price-history-entry">{format_price(ep)}{em2} - {ed}</span>'
-                    )
-                history_section = (
-                    f'<div class="card-price-history">'
-                    f'<span class="card-price-history-label">Evolution du prix:</span>'
-                    + ''.join(entry_lines) +
-                    f'</div>'
-                )
-            else:
-                amount_html     = price_display
-                history_section = ''
-
-            # Build price block: optional history section above, price row at bottom.
-            # The fav button is absolutely positioned into the price row by CSS.
-            if price_m2_display:
-                price_block = (
-                    f'{history_section}'
-                    f'<div class="card-price-row">'
-                    f'<span class="card-price-amount">{amount_html}</span>'
-                    f'<div class="card-price-sep"></div>'
-                    f'<span class="card-price-m2">{price_m2_display}</span>'
-                    f'</div>'
-                )
-            else:
-                price_block = (
-                    f'{history_section}'
-                    f'<div class="card-price-row">'
-                    f'<span class="card-price-amount">{amount_html}</span>'
-                    f'</div>'
-                )
-
-            with col:
-                card_html = f"""
-                <div class="card-wrapper">
-                    <div class="card">
-                        <a href="{row['live_url'] or row['url']}" target="_blank" class="card-link">
-                            <img src="{row['image_url'] if row['image_url'] and row['image_url'].startswith('http') else no_image_data_uri}" class="card-image" alt="Photo">
-                        </a>
-                        <div class="card-header">
-                            <div class="card-header-badge">{logo_svg_text}</div>
-                            <div class="card-header-meta">{f'{row["site"]}<br>' if agency_filter else f'<a href="?{urlencode({**dict(st.query_params), "agency": row["site"]})}" class="agency-filter-link" target="_self">{row["site"]}</a>'}{row['scraped_date']}{' · #' + str(row['id']) if DEV_MODE else ''}</div>
-                        </div>
-                        <a href="{row['live_url'] or row['url']}" target="_blank" class="card-link">
-                            <div class="card-title">{title}</div>
-                            <div class="card-description">{description}</div>
-                        </a>
-                        {price_block}
-                    </div>
+    
+    st.divider()
+    
+    # =============================================================
+    # UI - LISTE DES ANNONCES
+    # =============================================================
+    
+    if len(filtered_df) == 0:
+        if not selected_sites:
+            pass  # Warning already shown above
+        else:
+            st.info("Aucune annonce avec ces filtres")
+    else:
+        # Pagination -- bypassed in agency overlay mode (flat list, all listings).
+        # When agency_filter is active: page_df = full filtered set, no nav bars rendered.
+        if agency_filter:
+            page_df      = filtered_df
+            current_page = 0
+            total_pages  = 1
+            first_url = prev_url = next_url = last_url = ''
+            first_attr = prev_attr = next_attr = last_attr = 'aria-disabled="true"'
+        else:
+            unique_dates = sorted(filtered_df['scraped_date_dt'].unique(), reverse=True)
+            total_pages  = max(1, len(unique_dates))
+            current_page = min(st.session_state.current_page, total_pages - 1)  # clamp after filter
+            page_df      = filtered_df[filtered_df['scraped_date_dt'] == unique_dates[current_page]] if unique_dates else filtered_df.iloc[0:0]
+    
+            # Nav bar — pure HTML links, no st.columns needed
+            def _nav_url(p):
+                """Build a URL for page p preserving all current query params."""
+                params = dict(st.query_params)
+                params['page'] = str(p)
+                return '?' + urlencode(params)
+    
+            prev_url  = _nav_url(current_page - 1)
+            next_url  = _nav_url(current_page + 1)
+            first_url = _nav_url(0)
+            last_url  = _nav_url(total_pages - 1)
+            prev_attr  = '' if current_page > 0 else 'aria-disabled="true"'
+            next_attr  = '' if current_page < total_pages - 1 else 'aria-disabled="true"'
+            first_attr = '' if current_page > 0 else 'aria-disabled="true"'
+            last_attr  = '' if current_page < total_pages - 1 else 'aria-disabled="true"'
+    
+            st.markdown(f"""
+                <div class="page-nav">
+                    <a href="{first_url}" class="nav-btn nav-btn-edge" {first_attr} target="_self">&#8676;</a>
+                    <a href="{prev_url}" class="nav-btn" {prev_attr} target="_self">Pr&#233;c.</a>
+                    <span class="nav-label">{current_page + 1} / {total_pages}</span>
+                    <a href="{next_url}" class="nav-btn" {next_attr} target="_self">Suiv.</a>
+                    <a href="{last_url}" class="nav-btn nav-btn-edge" {last_attr} target="_self">&#8677;</a>
                 </div>
-                """
-                st.markdown(card_html, unsafe_allow_html=True)
-
-                if st.button("\u2764\uFE0E", key=button_key, help="is_fav" if is_favorited else "not_fav"):
-                    if is_favorited:
-                        st.session_state.favorites.remove(row['id'])
-                    else:
-                        st.session_state.favorites.add(row['id'])
-                    st.rerun()
-
-                if DEV_MODE:
-                    if st.button("\U0001f6a9", key=f"flag_{row['id']}", help="Signaler comme doublon"):
-                        flag_report_dialog(row['id'], row_title=title, row_site=row['site'])
-
-    # Set stColumn to position:relative so the absolutely-positioned fav
-    # button anchors to its own column instead of escaping to a distant
-    # static ancestor. Runs once; guard prevents re-injection on rerun.
-    st.components.v1.html("""
-        <script>
-        (function() {
-            if (window.parent.__nantimmoColFixed) return;
-            window.parent.__nantimmoColFixed = true;
-            function fixCols() {
-                var cols = window.parent.document.querySelectorAll('[data-testid="stColumn"]');
-                if (!cols.length) { setTimeout(fixCols, 100); return; }
-                cols.forEach(function(c) { c.style.position = 'relative'; });
+            """, unsafe_allow_html=True)
+    
+        # Scroll-to-top on page/filter navigation. Not fired on st.button reruns
+        # because those don't cause DOM mutations in stMain -- Streamlit does a
+        # reconciled in-place update, so the observer debounce never commits.
+        st.components.v1.html("""
+            <script>
+            if (!window.parent.__nantimmoObs) {
+                var s = window.parent.document.createElement('script');
+                s.textContent = `
+                    var el = document.querySelector('[data-testid=stMain]');
+                    if (el && !window.__nantimmoObs) {
+                        var t = null;
+                        window.__nantimmoObs = new MutationObserver(function() {
+                            clearTimeout(t);
+                            t = setTimeout(function() { el.scrollTop = 0; }, 150);
+                        });
+                        window.__nantimmoObs.observe(el, { childList: true, subtree: true });
+                    }
+                `;
+                window.parent.document.head.appendChild(s);
+                window.parent.__nantimmoObs = true;
             }
-            setTimeout(fixCols, 200);
-        })();
-        </script>
-    """, height=0)
+            </script>
+        """, height=0)
+    
+        # Inject all heart color rules in a single st.markdown call to avoid
+        # per-card empty stMarkdownContainer elements that create row gaps.
+        _fav_bottom = '37px' if DEV_MODE else '21px'  # DEV_MODE adds flag button below, shifting the card anchor
+        heart_styles = ''.join(
+            (
+                f".st-key-fav_{row['id']} [data-testid='stBaseButton-secondary'] {{"
+                f" bottom: {_fav_bottom} !important;"
+                f" background: {'#10B981' if row['id'] in st.session_state.favorites else 'transparent'} !important;"
+                f" border-color: {'#10B981' if row['id'] in st.session_state.favorites else 'var(--border-cream)'} !important; }}"
+                # Always the same filled glyph (U+2665). Unfavorited: knock fill to transparent,
+                # draw outline via -webkit-text-stroke. Same path = identical optical size.
+                + (f".st-key-fav_{row['id']} button p {{"
+                   f" color: #ffffff !important;"
+                   f" -webkit-text-stroke: 0 !important;"
+                   f" font-size: 1.4rem !important; }}"
+                   if row['id'] in st.session_state.favorites else
+                   f".st-key-fav_{row['id']} button p {{"
+                   f" color: transparent !important;"
+                   f" -webkit-text-stroke: 1px #ffffff !important;"
+                   f" font-size: 1.4rem !important; }}")
+            )
+            for _, row in page_df.iterrows()
+        )
+        st.markdown(f'<style>{heart_styles}</style>', unsafe_allow_html=True)
+    
+        # Agency overlay banner -- shown only when ?agency= is active.
+        # × is a plain <a href> that drops agency from current params and
+        # returns to the exact same page, filters untouched.
+        if agency_filter:
+            _dismiss_params = {k: v for k, v in st.query_params.items() if k != 'agency'}
+            _dismiss_url = '?' + urlencode(_dismiss_params) if _dismiss_params else '?'
+            _agency_count = len(filtered_df)
+            st.markdown(
+                f'<div class="agency-banner">'
+                f'<span class="agency-banner-name">{agency_filter}</span>'
+                f'<span class="agency-banner-count">{_agency_count} annonce{"s" if _agency_count != 1 else ""}</span>'
+                f'<a href="{_dismiss_url}" class="agency-banner-dismiss" target="_self">&#x2715;</a>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+    
+        # Afficher les cartes, row-by-row (3 per row) to avoid empty column gaps on last row
+        for chunk_start in range(0, len(page_df), 3):
+            chunk = page_df.iloc[chunk_start:chunk_start+3]
+            cols = st.columns(3) if len(chunk) == 3 else st.columns(len(chunk))
+            for col, (_, row) in zip(cols, chunk.iterrows()):
+    
+                # Prix principal
+                price_display = format_price(row['price_numeric'])
+    
+                # Prix au m² (shown only when both values are available)
+                price_m2_display = format_price_per_m2(row['price_per_m2'])
+    
+                # Titre : nettoyer le préfixe/suffixe pour OuestFrance
+                raw_title = row['title'] if pd.notna(row['title']) else ''
+                if row['site'] == 'Ouest France Immo':
+                    title = clean_ouestfrance_title(raw_title)
+                else:
+                    title = raw_title
+    
+                # Description : tronquer à 100 caractères
+                raw_desc = row['description'] if pd.notna(row['description']) else ''
+                description = (raw_desc[:150] + '…') if len(raw_desc) > 150 else (raw_desc or 'Pas de description')
+    
+                is_favorited = row['id'] in st.session_state.favorites
+                button_key = f"fav_{row['id']}"
+    
+                # Price history: derive change signal from price_history JSONB.
+                # price_history is [{price, date}, ...] oldest first.
+                ph = row.get('price_history')
+                ph = ph if (ph and isinstance(ph, list)) else []
+                sq = row.get('square_meters')  # used to compute per-entry m2 price
+                if ph:
+                    prev_price = ph[-1].get('price')
+                    if prev_price is not None and row['price_numeric'] is not None:
+                        if row['price_numeric'] < prev_price:
+                            p_color, p_arrow = '#10B981', '&#8595;'  # green, down
+                        else:
+                            p_color, p_arrow = '#ef4444', '&#8593;'  # red, up
+                        amount_html = f'<span style="color:{p_color}">{p_arrow} {price_display}</span>'
+                    else:
+                        amount_html = price_display
+                    # One line per history entry: price - m2/price - date
+                    entry_lines = []
+                    for e in ph:
+                        ep = e.get('price')
+                        if ep is None:
+                            continue
+                        ed = e.get('date', '')
+                        em2 = (f' - {int(round(ep / sq)):,} €/m²'.replace(',', ' '))\
+                              if (sq and sq > 0) else ''
+                        entry_lines.append(
+                            f'<span class="card-price-history-entry">{format_price(ep)}{em2} - {ed}</span>'
+                        )
+                    history_section = (
+                        f'<div class="card-price-history">'
+                        f'<span class="card-price-history-label">Evolution du prix:</span>'
+                        + ''.join(entry_lines) +
+                        f'</div>'
+                    )
+                else:
+                    amount_html     = price_display
+                    history_section = ''
+    
+                # Build price block: optional history section above, price row at bottom.
+                # The fav button is absolutely positioned into the price row by CSS.
+                if price_m2_display:
+                    price_block = (
+                        f'{history_section}'
+                        f'<div class="card-price-row">'
+                        f'<span class="card-price-amount">{amount_html}</span>'
+                        f'<div class="card-price-sep"></div>'
+                        f'<span class="card-price-m2">{price_m2_display}</span>'
+                        f'</div>'
+                    )
+                else:
+                    price_block = (
+                        f'{history_section}'
+                        f'<div class="card-price-row">'
+                        f'<span class="card-price-amount">{amount_html}</span>'
+                        f'</div>'
+                    )
+    
+                with col:
+                    card_html = f"""
+                    <div class="card-wrapper">
+                        <div class="card">
+                            <a href="{row['live_url'] or row['url']}" target="_blank" class="card-link">
+                                <img src="{row['image_url'] if row['image_url'] and row['image_url'].startswith('http') else no_image_data_uri}" class="card-image" alt="Photo">
+                            </a>
+                            <div class="card-header">
+                                <div class="card-header-badge">{logo_svg_text}</div>
+                                <div class="card-header-meta">{f'{row["site"]}<br>' if agency_filter else f'<a href="?{urlencode({**dict(st.query_params), "agency": row["site"]})}" class="agency-filter-link" target="_self">{row["site"]}</a>'}{row['scraped_date']}{' · #' + str(row['id']) if DEV_MODE else ''}</div>
+                            </div>
+                            <a href="{row['live_url'] or row['url']}" target="_blank" class="card-link">
+                                <div class="card-title">{title}</div>
+                                <div class="card-description">{description}</div>
+                            </a>
+                            {price_block}
+                        </div>
+                    </div>
+                    """
+                    st.markdown(card_html, unsafe_allow_html=True)
+    
+                    if st.button("\u2764\uFE0E", key=button_key, help="is_fav" if is_favorited else "not_fav"):
+                        if is_favorited:
+                            st.session_state.favorites.remove(row['id'])
+                        else:
+                            st.session_state.favorites.add(row['id'])
+                        st.rerun()
+    
+                    if DEV_MODE:
+                        if st.button("\U0001f6a9", key=f"flag_{row['id']}", help="Signaler comme doublon"):
+                            flag_report_dialog(row['id'], row_title=title, row_site=row['site'])
+    
+        # Set stColumn to position:relative so the absolutely-positioned fav
+        # button anchors to its own column instead of escaping to a distant
+        # static ancestor. Runs once; guard prevents re-injection on rerun.
+        st.components.v1.html("""
+            <script>
+            (function() {
+                if (window.parent.__nantimmoColFixed) return;
+                window.parent.__nantimmoColFixed = true;
+                function fixCols() {
+                    var cols = window.parent.document.querySelectorAll('[data-testid="stColumn"]');
+                    if (!cols.length) { setTimeout(fixCols, 100); return; }
+                    cols.forEach(function(c) { c.style.position = 'relative'; });
+                }
+                setTimeout(fixCols, 200);
+            })();
+            </script>
+        """, height=0)
+    
+        # Nav bar (bottom) -- suppressed in agency overlay mode
+        if not agency_filter:
+            st.markdown(f"""
+                <div class="page-nav page-nav-bottom">
+                    <a href="{first_url}" class="nav-btn nav-btn-edge" {first_attr} target="_self">&#8676;</a>
+                    <a href="{prev_url}" class="nav-btn" {prev_attr} target="_self">Pr&#233;c.</a>
+                    <span class="nav-label">{current_page + 1} / {total_pages}</span>
+                    <a href="{next_url}" class="nav-btn" {next_attr} target="_self">Suiv.</a>
+                    <a href="{last_url}" class="nav-btn nav-btn-edge" {last_attr} target="_self">&#8677;</a>
+                </div>
+            """, unsafe_allow_html=True)
 
-    # Nav bar (bottom) -- suppressed in agency overlay mode
-    if not agency_filter:
-        st.markdown(f"""
-            <div class="page-nav page-nav-bottom">
-                <a href="{first_url}" class="nav-btn nav-btn-edge" {first_attr} target="_self">&#8676;</a>
-                <a href="{prev_url}" class="nav-btn" {prev_attr} target="_self">Pr&#233;c.</a>
-                <span class="nav-label">{current_page + 1} / {total_pages}</span>
-                <a href="{next_url}" class="nav-btn" {next_attr} target="_self">Suiv.</a>
-                <a href="{last_url}" class="nav-btn nav-btn-edge" {last_attr} target="_self">&#8677;</a>
-            </div>
-        """, unsafe_allow_html=True)
+
+# =============================================================
+# FILTER PAGE (inline render, no dialog wrapper)
+# filter_panel() is a @st.dialog -- calling it opens a modal overlay.
+# st.Page needs a plain callable that renders inline content.
+# page_filter() renders the same form without the dialog wrapper.
+# =============================================================
+
+def page_filter():
+    """Filter form rendered as a full page (no dialog wrapper)."""
+    load_css(CSS_PATH)
+
+    # Header row: title left, dismiss X right.
+    # X uses st.switch_page so it behaves identically to Apply -- returns to
+    # listings without touching any filter state (pure cancel).
+    col_title, col_close = st.columns([1, 0.08])
+    with col_title:
+        st.markdown("## Catégories")
+    with col_close:
+        if st.button("\u00d7", key="pf_dismiss", help="Retour aux annonces"):
+            st.switch_page(_listings_page)
+
+    # ------------------------------------------------------------------
+    # Scope: Types
+    # ------------------------------------------------------------------
+    default_ptypes = (
+        st.session_state.applied_property_types
+        if st.session_state.applied_property_types is not None
+        else ALL_PROPERTY_TYPE_LABELS
+    )
+    if 'property_types_multiselect' not in st.session_state:
+        st.session_state['property_types_multiselect'] = default_ptypes
+    selected_ptype_labels = st.multiselect(
+        "Types",
+        options=ALL_PROPERTY_TYPE_LABELS,
+        key='property_types_multiselect',
+        label_visibility='collapsed',
+        placeholder="Choisir les types",
+    )
+
+    st.divider()
+    st.markdown("## Filtres")
+
+    if _filters_are_active and st.button("↺ Réinitialiser les filtres", use_container_width=True, key="page_reset_filters"):
+        keys_to_clear = [
+            'applied_search', 'applied_show_favorites',
+            'applied_price_min', 'applied_price_max',
+            'applied_m2_min', 'applied_m2_max',
+            'applied_sort_label', 'applied_selected_sites', 'applied_known_sites',
+            'applied_date_min', 'applied_date_max',
+            'current_page', 'sites_multiselect',
+        ]
+        for k in keys_to_clear:
+            if k in st.session_state:
+                del st.session_state[k]
+        st.query_params.clear()
+        st.switch_page(_listings_page)
+
+    st.divider()
+
+    search_term = st.text_input(
+        "Chercher par mot-clé",
+        value=st.session_state.applied_search,
+        placeholder="Rechercher",
+        key="pf_search_term"
+    )
+    st.divider()
+    show_favorites = st.checkbox("\u2764\uFE0E Favoris seulement", value=st.session_state.applied_show_favorites, key="pf_show_favorites")
+    st.divider()
+
+    default_price_min_str = st.session_state.applied_price_min
+    default_price_max_str = st.session_state.applied_price_max
+    col1, col2 = st.columns(2)
+    with col1:
+        raw_price_min = st.text_input("Prix min. (€)", value=default_price_min_str, placeholder="ex: 150 000", key="pf_raw_price_min")
+    with col2:
+        raw_price_max = st.text_input("Prix max. (€)", value=default_price_max_str, placeholder="ex: 400 000", key="pf_raw_price_max")
+    price_min = parse_price_input(raw_price_min)
+    price_max = parse_price_input(raw_price_max)
+    if raw_price_min.strip() and price_min is None:
+        st.caption("! Prix min. invalide")
+    if raw_price_max.strip() and price_max is None:
+        st.caption("! Prix max. invalide")
+    st.divider()
+
+    m2_min_data = df['square_meters'].min()
+    m2_max_data = df['square_meters'].max()
+    min_m2 = int(m2_min_data) if pd.notna(m2_min_data) else 0
+    max_m2 = int(m2_max_data) if pd.notna(m2_max_data) else 1000
+    default_m2_min = st.session_state.applied_m2_min
+    default_m2_max = st.session_state.applied_m2_max
+    col1, col2 = st.columns(2)
+    with col1:
+        m2_min = st.number_input("Surface min. (m²)", min_value=0, max_value=max_m2, value=default_m2_min, step=5, placeholder="Pas de minimum", key="pf_m2_min")
+    with col2:
+        m2_max = st.number_input("Surface max. (m²)", min_value=0, max_value=max_m2, value=default_m2_max, step=5, placeholder="Pas de maximum", key="pf_m2_max")
+    st.divider()
+
+    SORT_OPTIONS = {
+        "Date (récent → ancien)":  (None,            None),
+        "Prix (croissant)":        ("price_numeric",  True),
+        "Prix (décroissant)":      ("price_numeric",  False),
+        "Prix/m² (croissant)":     ("price_per_m2",   True),
+        "Prix/m² (décroissant)":   ("price_per_m2",   False),
+        "Surface (croissante)":    ("square_meters",  True),
+        "Surface (décroissante)":  ("square_meters",  False),
+    }
+    current_sort_label = st.session_state.applied_sort_label
+    if current_sort_label not in SORT_OPTIONS:
+        current_sort_label = "Date (récent → ancien)"
+    sort_label = st.selectbox("Trier par", options=list(SORT_OPTIONS.keys()), index=list(SORT_OPTIONS.keys()).index(current_sort_label), key="pf_sort_label")
+    sort_col, sort_asc = SORT_OPTIONS[sort_label]
+    st.divider()
+
+    available_sites = sorted(df['site'].unique())
+    if st.session_state.applied_selected_sites is not None:
+        default_sites = st.session_state.applied_selected_sites
+    else:
+        default_sites = get_url_param_list('sites', available_sites)
+    st.markdown("**Sources**")
+    if DEV_MODE:
+        col_all, col_none = st.columns(2)
+        with col_all:
+            if st.button("✓ Tout", use_container_width=True, key="pf_sites_select_all"):
+                st.session_state['sites_multiselect'] = available_sites
+        with col_none:
+            if st.button("× Aucun", use_container_width=True, key="pf_sites_select_none"):
+                st.session_state['sites_multiselect'] = []
+    if 'sites_multiselect' not in st.session_state:
+        st.session_state['sites_multiselect'] = default_sites
+    selected_sites = st.multiselect("Sources actives", options=available_sites, key='sites_multiselect', label_visibility='collapsed', placeholder="Choisir les agences")
+    st.divider()
+
+    date_min_data = df['scraped_date_dt'].min()
+    date_max_data = df['scraped_date_dt'].max()
+    try:
+        default_date_min = date.fromisoformat(st.session_state.applied_date_min) if st.session_state.applied_date_min else date_min_data
+        default_date_max = date.fromisoformat(st.session_state.applied_date_max) if st.session_state.applied_date_max else date_max_data
+    except (ValueError, TypeError):
+        default_date_min = date_min_data
+        default_date_max = date_max_data
+    default_date_min = max(default_date_min, date_min_data)
+    default_date_max = min(default_date_max, date_max_data)
+    date_range = st.date_input("Période", value=(default_date_min, default_date_max), min_value=date_min_data, max_value=date_max_data, format="DD/MM/YYYY", key="pf_date_range")
+    if isinstance(date_range, (list, tuple)) and len(date_range) == 2:
+        selected_date_min, selected_date_max = date_range
+    elif isinstance(date_range, (list, tuple)) and len(date_range) == 1:
+        selected_date_min = date_range[0]
+        selected_date_max = date_max_data
+    else:
+        selected_date_min = date_range
+        selected_date_max = date_max_data
+    st.divider()
+
+    if st.button("Appliquer", use_container_width=True, type="primary", key="pf_apply_filters"):
+        st.session_state.applied_search           = search_term
+        st.session_state.applied_show_favorites   = show_favorites
+        st.session_state.applied_price_min        = raw_price_min
+        st.session_state.applied_price_max        = raw_price_max
+        st.session_state.applied_m2_min           = m2_min
+        st.session_state.applied_m2_max           = m2_max
+        st.session_state.applied_sort_label       = sort_label
+        st.session_state.applied_selected_sites   = selected_sites
+        st.session_state.applied_known_sites       = set(available_sites)
+        st.session_state.applied_date_min         = selected_date_min.isoformat()
+        st.session_state.applied_date_max         = selected_date_max.isoformat()
+        st.session_state.applied_property_types   = selected_ptype_labels
+        st.session_state.current_page             = 0
+        st.switch_page(_listings_page)
+
+    st.divider()
+    st.caption(f"Mis à jour: {df['scraped_date'].max()}")
+    st.caption(f"Total: {len(df)} annonces")
+
+
+# =============================================================
+# ROUTER
+# st.navigation is the entrypoint router. It must be called after all
+# module-level setup (data load, session state init, CSS) has run.
+# position="top" renders the navbar at the top of the page, replacing
+# the native Streamlit sidebar navigation entirely.
+# DEV_MODE gates the dedup review page -- never visible in production.
+# =============================================================
+
+_listings_page = st.Page(page_listings, title="Annonces", icon=":material/apartment:")
+_filtres_page  = st.Page(page_filter,   title="Filtres",  icon=":material/settings:")
+
+if DEV_MODE:
+    _pages = [_listings_page, _filtres_page,
+              st.Page("pages/dedup_review.py", title="Dedup", icon=":material/bug_report:")]
+else:
+    _pages = [_listings_page, _filtres_page]
+
+_current_page = st.navigation(_pages, position="top")
+_current_page.run()
