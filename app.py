@@ -1400,7 +1400,7 @@ def page_listings():
                     <div class="card-wrapper">
                         <div class="card">
                             <a href="{row['live_url'] or row['url']}" target="_blank" class="card-link">
-                                <img src="{row['image_url'] if row['image_url'] and row['image_url'].startswith('http') else no_image_data_uri}" class="card-image" alt="Photo">
+                                <img src="{row['image_url'] if isinstance(row['image_url'], str) and row['image_url'].startswith('http') else no_image_data_uri}" class="card-image" alt="Photo">
                             </a>
                             <div class="card-header">
                                 <div class="card-header-badge">{logo_svg_text}</div>
