@@ -1396,17 +1396,21 @@ def page_listings():
                     )
     
                 with col:
+                    _live = row['live_url']
+                    _url  = row['url']
+                    _raw_url = _live if isinstance(_live, str) and _live.startswith('http') else _url
+                    card_url = _raw_url if isinstance(_raw_url, str) and _raw_url.startswith('http') else '#'
                     card_html = f"""
                     <div class="card-wrapper">
                         <div class="card">
-                            <a href="{row['live_url'] or row['url']}" target="_blank" class="card-link">
+                            <a href="{card_url}" target="_blank" class="card-link">
                                 <img src="{row['image_url'] if isinstance(row['image_url'], str) and row['image_url'].startswith('http') else no_image_data_uri}" class="card-image" alt="Photo">
                             </a>
                             <div class="card-header">
                                 <div class="card-header-badge">{logo_svg_text}</div>
                                 <div class="card-header-meta">{f'{row["site"]}<br>' if agency_filter else f'<a href="?{urlencode({**dict(st.query_params), "agency": row["site"]})}" class="agency-filter-link" target="_self">{row["site"]}</a>'}{row['scraped_date']}{' · #' + str(row['id']) if DEV_MODE else ''}</div>
                             </div>
-                            <a href="{row['live_url'] or row['url']}" target="_blank" class="card-link">
+                            <a href="{card_url}" target="_blank" class="card-link">
                                 <div class="card-title">{title}</div>
                                 <div class="card-description">{description}</div>
                             </a>
